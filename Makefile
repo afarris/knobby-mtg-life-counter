@@ -56,6 +56,8 @@ firmware-deps: check-arduino
 	$(ARDUINO_CLI) lib install ESP32_Display_Panel@1.0.0
 	$(ARDUINO_CLI) lib install ESP32_IO_Expander@1.0.1
 	$(ARDUINO_CLI) lib install esp-lib-utils@0.1.2
+	$(ARDUINO_CLI) lib install ArduinoJson@6.21.6
+	$(ARDUINO_CLI) lib install WebSockets@2.7.2
 
 firmware: check-arduino
 	$(ARDUINO_CLI) compile --fqbn "$(FQBN)" knobby

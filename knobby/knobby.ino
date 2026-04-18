@@ -11,6 +11,7 @@
 #include "knob.h"
 #include "src/hw.h"
 #include "src/wireless_manager.h"
+#include "src/tracker_sync.h"
 
 static const float BATTERY_DIVIDER_RATIO = 2.0f;
 static const float BATTERY_CALIBRATION_SCALE = 1.0f;
@@ -130,6 +131,7 @@ void loop()
   uint32_t time_till_next;
 
   knob_process_pending();
+  tracker_hw_loop();                 /* pumps WebSocket events + backoff reconnect */
   time_till_next = lv_timer_handler();
 
   // Skip light sleep while the radio is active — esp_light_sleep_start()

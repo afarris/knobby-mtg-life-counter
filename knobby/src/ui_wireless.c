@@ -1,5 +1,7 @@
 #include "ui_wireless.h"
+#include "ui_tracker.h"
 #include "wireless_manager.h"
+#include "tracker_sync.h"
 #include "settings.h"
 #include "types.h"
 #include <lvgl.h>
@@ -31,10 +33,13 @@ static lv_obj_t *btn_password_save   = NULL;
 static char pending_ssid[WIFI_SSID_LEN] = {0};
 
 /* ---------- status screen widgets ---------- */
-static lv_obj_t *label_status_mode   = NULL;
-static lv_obj_t *label_status_state  = NULL;
-static lv_obj_t *label_status_ssid   = NULL;
-static lv_obj_t *label_status_ip     = NULL;
+static lv_obj_t *label_status_mode    = NULL;
+static lv_obj_t *label_status_state   = NULL;
+static lv_obj_t *label_status_ssid    = NULL;
+static lv_obj_t *label_status_ip      = NULL;
+static lv_obj_t *label_status_tracker = NULL;
+static lv_obj_t *label_status_server  = NULL;
+static lv_obj_t *label_status_me      = NULL;
 static lv_obj_t *label_status_rssi   = NULL;
 static lv_timer_t *status_refresh_timer = NULL;
 
@@ -193,8 +198,16 @@ static void event_open_network_config(lv_event_t *e)
 
 static void event_open_game_config(lv_event_t *e)
 {
-    /* Phase 1 placeholder — always greyed out, so this shouldn't fire. */
     (void)e;
+    commit_pending_wireless_mode();
+    if (wireless_current_mode() != WIRELESS_MODE_WIFI) return;
+    /* Connected → the status screen is the useful destination.
+     * Otherwise jump straight to URL entry (no mDNS discovery). */
+    if (tracker_state() == TRACKER_CONNECTED) {
+        open_wireless_status_screen();
+    } else {
+        open_tracker_url_entry_screen();
+    }
 }
 
 static void event_open_status(lv_event_t *e)
@@ -211,9 +224,12 @@ static void rebuild_wireless_menu(void)
 
     wireless_poll();
     bool mode_active = pending_mode != WIRELESS_MODE_DISABLED;
-    /* Game Config is always greyed in Phase 1 — no implementation yet. Phase 2
-     * will enable it once connected (state == CONNECTED). */
-    bool game_config_enabled = false;
+    /* Game Config needs an actually-up WiFi link — discovery/HTTP/WS all
+     * require the radio to be associated. Gating on the LIVE mode+state
+     * (not `pending_mode`) so a staged-but-uncommitted mode change doesn't
+     * light it up prematurely. */
+    bool game_config_enabled = (wireless_current_mode()  == WIRELESS_MODE_WIFI &&
+                                wireless_current_state() == WIRELESS_STATE_CONNECTED);
 
     static char mode_buf[40];
     bool pending_diff = pending_initialized && pending_mode != wireless_current_mode();
@@ -615,6 +631,57 @@ void refresh_wireless_status_ui(void)
         lv_label_set_text(label_status_ip, "");
         lv_label_set_text(label_status_rssi, "");
     }
+
+    /* ---- tracker session (shown only in WiFi mode) ---- */
+    if (label_status_tracker && label_status_server && label_status_me) {
+        if (mode == WIRELESS_MODE_WIFI) {
+            const char *ts;
+            switch (tracker_state()) {
+                case TRACKER_DISCONNECTED: ts = "Disconnected"; break;
+                case TRACKER_CONNECTING:   ts = "Connecting"; break;
+                case TRACKER_CONNECTED:    ts = "Connected"; break;
+                case TRACKER_ERROR:        ts = "Error"; break;
+                default:                    ts = "?"; break;
+            }
+            snprintf(buf, sizeof(buf), "Tracker: %s", ts);
+            lv_label_set_text(label_status_tracker, buf);
+
+            const char *url = tracker_server_url();
+            if (url && url[0]) {
+                snprintf(buf, sizeof(buf), "Server: %s", url);
+            } else {
+                snprintf(buf, sizeof(buf), "Server: -");
+            }
+            lv_label_set_text(label_status_server, buf);
+
+            int me = tracker_my_player_id();
+            if (me > 0) {
+                /* Look up our name in the cached roster for a nicer label. */
+                char my_name[TRACKER_PLAYER_NAME_LEN] = {0};
+                int n = tracker_roster_count();
+                for (int i = 0; i < n; i++) {
+                    tracker_roster_entry_t e;
+                    tracker_roster_entry(i, &e);
+                    if (e.player_id == me) {
+                        snprintf(my_name, sizeof(my_name), "%s", e.name);
+                        break;
+                    }
+                }
+                if (my_name[0]) {
+                    snprintf(buf, sizeof(buf), "Me: Player %d (%s)", me, my_name);
+                } else {
+                    snprintf(buf, sizeof(buf), "Me: Player %d", me);
+                }
+                lv_label_set_text(label_status_me, buf);
+            } else {
+                lv_label_set_text(label_status_me, "Me: not claimed");
+            }
+        } else {
+            lv_label_set_text(label_status_tracker, "");
+            lv_label_set_text(label_status_server, "");
+            lv_label_set_text(label_status_me, "");
+        }
+    }
 }
 
 static void build_wireless_status_screen(void)
@@ -660,6 +727,24 @@ static void build_wireless_status_screen(void)
     lv_obj_set_style_text_color(label_status_rssi, lv_color_white(), 0);
     lv_obj_set_style_text_font(label_status_rssi, &lv_font_montserrat_16, 0);
     lv_obj_align(label_status_rssi, LV_ALIGN_TOP_MID, 0, 210);
+
+    label_status_tracker = lv_label_create(screen_wireless_status);
+    lv_obj_set_style_text_color(label_status_tracker, lv_palette_main(LV_PALETTE_BLUE), 0);
+    lv_obj_set_style_text_font(label_status_tracker, &lv_font_montserrat_14, 0);
+    lv_obj_align(label_status_tracker, LV_ALIGN_TOP_MID, 0, 244);
+
+    label_status_server = lv_label_create(screen_wireless_status);
+    lv_label_set_long_mode(label_status_server, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(label_status_server, 300);
+    lv_obj_set_style_text_color(label_status_server, lv_color_white(), 0);
+    lv_obj_set_style_text_font(label_status_server, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(label_status_server, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(label_status_server, LV_ALIGN_TOP_MID, 0, 266);
+
+    label_status_me = lv_label_create(screen_wireless_status);
+    lv_obj_set_style_text_color(label_status_me, lv_color_white(), 0);
+    lv_obj_set_style_text_font(label_status_me, &lv_font_montserrat_14, 0);
+    lv_obj_align(label_status_me, LV_ALIGN_TOP_MID, 0, 286);
 }
 
 void open_wireless_status_screen(void)

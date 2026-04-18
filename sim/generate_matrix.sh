@@ -349,6 +349,38 @@ shot "wireless_status_failed.png" --screen wireless-status \
     --wireless-mode wifi --wifi-net "BadNet:pw" --wifi-status failed
 
 # ============================================================
+# 23. Tracker (Issue #11, Phase 2)
+# ============================================================
+# URL entry screen
+shot "tracker_url.png" --screen tracker-url
+
+# Roster: connecting / connected-empty / populated / error
+shot "tracker_roster_connecting.png" --screen tracker-roster \
+    --tracker-url "http://srv:8000" --tracker-status connecting
+shot "tracker_roster_empty.png" --screen tracker-roster \
+    --tracker-url "http://srv:8000" --tracker-status connected
+shot "tracker_roster_populated.png" --screen tracker-roster \
+    --tracker-url "http://tracker.local:8000" --tracker-status connected \
+    --tracker-roster "1:Alice:38,2:Bob:40,3:Claire:22,4:Devin:14"
+shot "tracker_roster_error.png" --screen tracker-roster \
+    --tracker-url "http://bad:8000" --tracker-status error
+
+# Wireless Status with tracker lines populated
+shot "wireless_status_tracker_connected.png" --screen wireless-status \
+    --wireless-mode wifi --wifi-net "Net:pw" --wifi-status connected --wifi-ssid "Net" \
+    --tracker-url "http://tracker.local:8000" --tracker-status connected \
+    --tracker-my-id 3 \
+    --tracker-roster "1:Alice:38,2:Bob:40,3:Claire:22,4:Devin:14"
+shot "wireless_status_tracker_unclaimed.png" --screen wireless-status \
+    --wireless-mode wifi --wifi-net "Net:pw" --wifi-status connected --wifi-ssid "Net" \
+    --tracker-url "http://tracker.local:8000" --tracker-status connected \
+    --tracker-roster "1:Alice:38,2:Bob:40,3:Claire:22,4:Devin:14"
+
+# Wireless menu showing Game Config enabled (in WiFi mode)
+shot "wireless_menu_wifi_gameconfig_enabled.png" --screen wireless-menu \
+    --wireless-mode wifi --wifi-net "Net:pw" --wifi-status connected
+
+# ============================================================
 # Generate index.html
 # ============================================================
 INDEX="$OUT/index.html"
@@ -396,6 +428,7 @@ SEC_BRIGHT=(); SEC_COUNTER_EDIT=(); SEC_DAMAGE=(); SEC_SETTINGS=()
 SEC_TIMER=()
 SEC_WIRELESS=()
 SEC_MANA=()
+SEC_TRACKER=()
 SEC_OTHER=()
 
 for f in "${FILES[@]}"; do
@@ -414,6 +447,7 @@ for f in "${FILES[@]}"; do
         counter_edit_*)       SEC_COUNTER_EDIT+=("$f") ;;
         damage_*|select_*|all_damage_*) SEC_DAMAGE+=("$f") ;;
         settings_*)           SEC_SETTINGS+=("$f") ;;
+        tracker_*|wireless_status_tracker_*) SEC_TRACKER+=("$f") ;;
         wifi_*|wireless_*)    SEC_WIRELESS+=("$f") ;;
         mana_*)               SEC_MANA+=("$f") ;;
         *)                    SEC_OTHER+=("$f") ;;
@@ -436,6 +470,7 @@ write_section "Damage / Select" "${SEC_DAMAGE[@]}"
 write_section "Settings" "${SEC_SETTINGS[@]}"
 write_section "Mana Pool" "${SEC_MANA[@]}"
 write_section "Wireless" "${SEC_WIRELESS[@]}"
+write_section "Tracker" "${SEC_TRACKER[@]}"
 write_section "Other" "${SEC_OTHER[@]}"
 
 echo '</body></html>' >> "$INDEX"

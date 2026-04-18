@@ -16,6 +16,9 @@ extern "C" void wireless_hw_wifi_on(void)
     /* Don't let Arduino persist creds across reboots — we manage our own MRU in NVS. */
     WiFi.persistent(false);
     WiFi.mode(WIFI_STA);
+    /* NOTE: WiFi.setSleep(false) is deferred to wireless_hw_wifi_status()
+     * once we observe WL_CONNECTED, because calling it while STA is mid-
+     * associate trips `wifi:sta is connecting, cannot set config`. */
     attempting = false;
 }
 
@@ -45,9 +48,21 @@ extern "C" int wireless_hw_wifi_status(void)
 {
     wl_status_t s = WiFi.status();
     switch (s) {
-        case WL_CONNECTED:
+        case WL_CONNECTED: {
+            /* Latch WiFi.setSleep(false) once after association. Disables
+             * WIFI_PS_MIN_MODEM so the radio stays fully on — avoids
+             * beacon-gated latency/packet-loss that was killing short HTTP
+             * round-trips. Idempotent; cheap to call every poll, but we
+             * gate it to avoid the "cannot set config" warning during
+             * brief reassociations. */
+            static bool sleep_configured = false;
+            if (!sleep_configured) {
+                WiFi.setSleep(false);
+                sleep_configured = true;
+            }
             attempting = false;
             return WIRELESS_HW_WIFI_CONNECTED;
+        }
         case WL_CONNECT_FAILED:
         case WL_NO_SSID_AVAIL:
         case WL_CONNECTION_LOST:

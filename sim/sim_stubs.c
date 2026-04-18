@@ -305,3 +305,57 @@ void wireless_hw_wifi_scan_result(int idx, char *ssid_out, size_t n,
 }
 
 void wireless_hw_wifi_scan_clear(void) { /* no-op */ }
+
+/* ---- Tracker backend (stubbed for screenshot simulator) ----
+ * Enough to link and drive the UI through all states. Task #12 extends
+ * this with CLI-controlled fake roster + state transitions.
+ */
+
+#include "tracker_sync.h"
+
+static int sim_tracker_ws_state = 0;   /* 0=closed 1=connecting 2=open 3=error */
+
+void sim_tracker_set_state(int hw_state)
+{
+    sim_tracker_ws_state = hw_state;
+    tracker_sync_on_ws_state(hw_state);
+}
+
+/* No JSON parser in the sim; CLI flags drive roster/claim/state directly. */
+void tracker_hw_fetch_and_apply_state(void) { /* no-op */ }
+
+#include <stdarg.h>
+void tracker_log(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    fprintf(stderr, "[tracker] ");
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    size_t n = strlen(fmt);
+    if (n == 0 || fmt[n - 1] != '\n') fprintf(stderr, "\n");
+}
+
+void tracker_hw_init(void) { /* no-op */ }
+void tracker_hw_connect(const char *base_url)    { (void)base_url; sim_tracker_ws_state = 2; tracker_sync_on_ws_state(2); }
+void tracker_hw_disconnect(void)                 { sim_tracker_ws_state = 0; tracker_sync_on_ws_state(0); }
+bool tracker_hw_is_open(void)                    { return sim_tracker_ws_state == 2; }
+
+bool tracker_hw_post_update(int player_id, int delta)
+{
+    (void)player_id; (void)delta;
+    return true;
+}
+
+bool tracker_hw_post_commander_damage(int target_id, int source_id, int delta, bool is_partner)
+{
+    (void)target_id; (void)source_id; (void)delta; (void)is_partner;
+    return true;
+}
+
+bool tracker_hw_post_poison(int player_id, int delta)
+{
+    (void)player_id; (void)delta;
+    return true;
+}
+

@@ -22,6 +22,9 @@ extern const char *sim_wifi_fake_ssid;
 extern int8_t      sim_wifi_fake_rssi;
 extern uint32_t    sim_wifi_fake_ip;
 
+/* Tracker backend fakes. */
+void sim_tracker_set_state(int hw_state);   /* 0=closed 1=connecting 2=open 3=error */
+
 /* ESP32 attribute macros — empty on desktop */
 #ifndef IRAM_ATTR
 #define IRAM_ATTR

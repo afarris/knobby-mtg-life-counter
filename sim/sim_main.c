@@ -20,6 +20,8 @@
 #include "rename.h"
 #include "ui_wireless.h"
 #include "wireless_manager.h"
+#include "ui_tracker.h"
+#include "tracker_sync.h"
 #include "mana.h"
 
 #include <stdio.h>
@@ -156,6 +158,8 @@ static void nav_wifi_networks(void)    { open_wifi_networks_screen(); }
 static void nav_wifi_scan(void)        { open_wifi_scan_screen(); }
 static void nav_wifi_password(void)    { open_wifi_password_screen("KnobbyNet"); }
 static void nav_wireless_status(void)  { open_wireless_status_screen(); }
+static void nav_tracker_url(void)      { open_tracker_url_entry_screen(); }
+static void nav_tracker_roster(void)   { open_tracker_roster_screen(NULL); }
 static void nav_mana(void) { open_mana_screen(); }
 
 static const screen_entry_t all_screens[] = {
@@ -190,6 +194,8 @@ static const screen_entry_t all_screens[] = {
     {"wifi-scan",        nav_wifi_scan},
     {"wifi-password",    nav_wifi_password},
     {"wireless-status",  nav_wireless_status},
+    {"tracker-url",      nav_tracker_url},
+    {"tracker-roster",   nav_tracker_roster},
     {"mana",             nav_mana},
     {NULL, NULL}
 };
@@ -248,13 +254,21 @@ static void print_usage(void)
            "  --wifi-status <disc|connecting|connected|failed>  Fake connection state\n"
            "  --wifi-ssid <name>              Override fake current-connected SSID\n"
            "  --wifi-rssi <n>                 Override fake signal strength (dBm)\n"
+           "\nTracker (for tracker-* screens + wireless-status):\n"
+           "  --tracker-url <url>             Pretend this server is connected\n"
+           "  --tracker-my-id <n>             Claim this server-side player_id (1..8)\n"
+           "  --tracker-status <disc|connecting|connected|error>\n"
+           "                                  Override the HW-level WS state\n"
+           "  --tracker-roster \"id:name:life,...\"\n"
+           "                                  Populate the fake roster\n"
            "\nAvailable screens:\n"
            "  main 1p 2p 3p 4p intro menu tools settings-menu settings-more\n"
            "  brightness battery dice damage-log game-mode custom-life select\n"
            "  damage player-menu rename all-damage counters-menu counter-edit\n"
            "  color-menu color-picker mana\n"
            "  settings-page3 wireless-menu wifi-networks wifi-scan wifi-password\n"
-           "  wireless-status\n");
+           "  wireless-status\n"
+           "  tracker-url tracker-roster\n");
 }
 
 /* ---- CSV helpers ---- */
@@ -357,6 +371,13 @@ int main(int argc, char *argv[])
     int wireless_mode_set = 0;
     wifi_net_t wifi_nets_arg[WIFI_NET_COUNT] = {0};
     int wifi_nets_count = 0;
+
+    /* Tracker */
+    const char *tracker_url_arg    = NULL;
+    int         tracker_status_arg = -1;   /* -1 = leave unset */
+    int         tracker_my_id_arg  = 0;
+    tracker_roster_entry_t tracker_roster_arg[TRACKER_ROSTER_MAX] = {0};
+    int         tracker_roster_count_arg = 0;
 
     int mana_vals[MANA_COLOR_COUNT] = {0};
     int mana_set = 0;
@@ -482,6 +503,40 @@ int main(int argc, char *argv[])
         } else if (strcmp(argv[i], "--mana-delta") == 0 && i + 1 < argc) {
             mana_delta_val = atoi(argv[++i]);
             mana_delta_set = 1;
+        } else if (strcmp(argv[i], "--tracker-url") == 0 && i + 1 < argc) {
+            tracker_url_arg = argv[++i];
+        } else if (strcmp(argv[i], "--tracker-my-id") == 0 && i + 1 < argc) {
+            tracker_my_id_arg = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--tracker-status") == 0 && i + 1 < argc) {
+            const char *v = argv[++i];
+            if      (strcmp(v, "disc") == 0)       tracker_status_arg = 0;
+            else if (strcmp(v, "connecting") == 0) tracker_status_arg = 1;
+            else if (strcmp(v, "connected") == 0)  tracker_status_arg = 2;
+            else if (strcmp(v, "error") == 0)      tracker_status_arg = 3;
+            else { fprintf(stderr, "Unknown tracker status: %s\n", v); return 1; }
+        } else if (strcmp(argv[i], "--tracker-roster") == 0 && i + 1 < argc) {
+            /* Comma-separated "id:name:life" entries, e.g.
+             * --tracker-roster "1:Alice:38,2:Bob:40,3:Claire:22" */
+            char tmp[512];
+            snprintf(tmp, sizeof(tmp), "%s", argv[++i]);
+            char *tok = strtok(tmp, ",");
+            while (tok && tracker_roster_count_arg < TRACKER_ROSTER_MAX) {
+                int id = atoi(tok);
+                const char *name = "";
+                int life = 40;
+                char *colon1 = strchr(tok, ':');
+                if (colon1) {
+                    *colon1 = '\0';
+                    name = colon1 + 1;
+                    char *colon2 = strchr(name, ':');
+                    if (colon2) { *colon2 = '\0'; life = atoi(colon2 + 1); }
+                }
+                tracker_roster_entry_t *e = &tracker_roster_arg[tracker_roster_count_arg++];
+                e->player_id = id;
+                e->life = life;
+                snprintf(e->name, sizeof(e->name), "%s", name);
+                tok = strtok(NULL, ",");
+            }
         } else if (strcmp(argv[i], "--outdir") == 0 && i + 1 < argc) {
             outdir = argv[++i];
         } else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
@@ -520,6 +575,31 @@ int main(int argc, char *argv[])
     /* Apply wireless mode after knob_gui() so the manager sees the loaded MRU */
     if (wireless_mode_set) {
         wireless_set_mode(wireless_mode_arg);
+    }
+
+    /* Apply tracker overrides. Order matters:
+     *  1. tracker_connect seeds server_url + transitions state via the stub.
+     *  2. Populate roster so pick-screen + status screen render with entries.
+     *  3. Claim player.
+     *  4. Finally override the HW state (so any of the above that reset it
+     *     don't stomp the desired screenshot state).
+     */
+    if (tracker_url_arg) {
+        tracker_connect(tracker_url_arg);
+    }
+    if (tracker_roster_count_arg > 0) {
+        tracker_sync_roster_clear();
+        for (int k = 0; k < tracker_roster_count_arg; k++) {
+            tracker_sync_roster_add(tracker_roster_arg[k].player_id,
+                                    tracker_roster_arg[k].name,
+                                    tracker_roster_arg[k].life);
+        }
+    }
+    if (tracker_my_id_arg > 0) {
+        tracker_claim_player(tracker_my_id_arg);
+    }
+    if (tracker_status_arg >= 0) {
+        sim_tracker_set_state(tracker_status_arg);
     }
 
     /* Apply RAM-only overrides after navigation */

@@ -13,6 +13,8 @@
 #include "src/damage_log.h"
 #include "src/rename.h"
 #include "src/ui_wireless.h"
+#include "src/ui_tracker.h"
+#include "src/tracker_sync.h"
 #include "src/mana.h"
 
 // ---------- swipe state ----------
@@ -91,6 +93,12 @@ static void handle_back_navigation(lv_obj_t *screen)
     } else if (screen == screen_wifi_password) {
         open_wifi_scan_screen();
     } else if (screen == screen_wireless_status) {
+        open_wireless_menu_screen();
+    } else if (screen == screen_tracker_url_entry) {
+        open_wireless_menu_screen();
+    } else if (screen == screen_tracker_roster) {
+        /* Back before claiming = abandon connection */
+        tracker_disconnect();
         open_wireless_menu_screen();
     } else if (screen == screen_settings) {
         lv_scr_load(screen_screen_settings_menu);
@@ -193,6 +201,7 @@ void knob_gui(void)
     build_game_mode_menu_screen();
     build_custom_life_screen();
     build_wireless_screens();
+    build_tracker_screens();
 
     refresh_main_ui();
     refresh_multiplayer_ui();

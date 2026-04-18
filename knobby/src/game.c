@@ -1,6 +1,7 @@
 #include "game.h"
 #include "storage.h"
 #include "damage_log.h"
+#include "tracker_sync.h"
 #include "esp_random.h"
 // Forward declarations for UI refresh (defined in screen modules)
 extern void refresh_player_ui(void);
@@ -373,8 +374,20 @@ int apply_counter_edit(void)
             set_player_elimination_action(player, LOG_EVT_COUNTER, counter_edit_type, change_delta);
         }
         if (counter_edit_type == COUNTER_TYPE_POISON) {
+            /* Match mtg-tracker phone (hooks/useGameActions.js#handlePoison):
+             * when poison becomes lethal (10+) AND the player was alive, life
+             * snaps to 0. Send the corresponding /update alongside /poison. */
+            int life_api_delta = 0;
+            if (counter_edit_value >= 10 && player_life[player] > 0) {
+                life_api_delta = -player_life[player];
+                player_life[player] = 0;
+            }
             check_player_elimination(player);
+            tracker_send_poison(player, change_delta);
+            if (life_api_delta != 0)
+                tracker_send_life_delta(player, life_api_delta);
         }
+        /* cmd_tax, partner_tax, experience: no server analog — stay local-only. */
     }
 
     return change_delta;
@@ -398,6 +411,7 @@ void life_preview_commit_cb(lv_timer_t *timer)
     player_life[preview_player] = clamp_life(
         player_life[preview_player] + pending_life_delta
     );
+    tracker_send_life_delta(preview_player, pending_life_delta);
     if (player_life[preview_player] <= 0) {
         set_player_elimination_action(preview_player, LOG_EVT_LIFE, -1, pending_life_delta);
     }
@@ -442,10 +456,28 @@ void damage_apply(void)
     if (delta == 0) return;
 
     source = get_cmd_target_player_index(selected_enemy);
-    cmd_damage_totals[source][cmd_damage_target] = enemies[selected_enemy].damage;
+    int new_cmd  = enemies[selected_enemy].damage;
+    int old_life = player_life[cmd_damage_target];
+    /* Match mtg-tracker's phone app (hooks/useGameActions.js#handleCommanderDamage):
+     * when cmd damage crosses into 21+, life snaps to 0 (MTG lethal rule).
+     * Otherwise life changes by -delta as before. */
+    int new_life = (new_cmd >= 21 && old_life > 0)
+                   ? 0
+                   : clamp_life(old_life - delta);
+    int life_api_delta = new_life - old_life;
+
+    cmd_damage_totals[source][cmd_damage_target] = new_cmd;
     damage_log_add(cmd_damage_target, -delta, LOG_EVT_CMD_DAMAGE, source);
-    player_life[cmd_damage_target] = clamp_life(player_life[cmd_damage_target] - delta);
-    if (cmd_damage_totals[source][cmd_damage_target] >= 20 || player_life[cmd_damage_target] <= 0) {
+    player_life[cmd_damage_target] = new_life;
+
+    /* mtg-tracker keeps commander_damage and life as independent fields;
+     * the phone app POSTs both, so we do too. Sign of lifeApiDelta already
+     * accounts for the lethal snap. */
+    tracker_send_cmd_damage(cmd_damage_target, source, delta, false);
+    if (life_api_delta != 0)
+        tracker_send_life_delta(cmd_damage_target, life_api_delta);
+
+    if (cmd_damage_totals[source][cmd_damage_target] >= 20 || new_life <= 0) {
         set_player_elimination_action(cmd_damage_target, LOG_EVT_CMD_DAMAGE, source, -delta);
     }
     check_player_elimination(cmd_damage_target);

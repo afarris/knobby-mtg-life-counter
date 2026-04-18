@@ -23,6 +23,8 @@ arduino-cli lib install lvgl@8.3.11
 arduino-cli lib install ESP32_Display_Panel@1.0.0
 arduino-cli lib install ESP32_IO_Expander@1.0.1
 arduino-cli lib install esp-lib-utils@0.1.2
+arduino-cli lib install ArduinoJson@6.21.6
+arduino-cli lib install WebSockets@2.7.2
 ```
 
 **Compile:**
