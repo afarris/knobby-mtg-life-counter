@@ -10,6 +10,8 @@
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -103,6 +105,14 @@ static void main_loop(void)
 
 int main(int argc, char *argv[])
 {
+    extern float sim_battery_voltage;
+    int i;
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--battery-voltage") == 0 && i + 1 < argc) {
+            sim_battery_voltage = (float)atof(argv[++i]);
+        }
+    }
+
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
         return 1;

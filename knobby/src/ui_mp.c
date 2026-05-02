@@ -3,6 +3,20 @@
 #include "ui_1p.h"
 #include "game.h"
 #include "storage.h"
+#include "hw.h"
+
+static lv_obj_t *add_low_battery_icon(lv_obj_t *parent)
+{
+    lv_obj_t *batt = lv_label_create(parent);
+    lv_label_set_text(batt, LV_SYMBOL_BATTERY_EMPTY);
+    lv_obj_set_style_text_color(batt, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_text_font(batt, &lv_font_montserrat_22, 0);
+    lv_obj_align(batt, LV_ALIGN_TOP_MID, 0, 28);
+    battery_icon_register(batt);
+    return batt;
+}
+
+static lv_obj_t *mp_battery_icon = NULL;
 
 #include <string.h>
 
@@ -495,6 +509,11 @@ void rebuild_multiplayer_layout(int track)
 
     if (screen_multiplayer == NULL) return;
 
+    if (mp_battery_icon != NULL) {
+        battery_icon_unregister(mp_battery_icon);
+        mp_battery_icon = NULL;
+    }
+
     lv_obj_clean(screen_multiplayer);
     memset(&mp_state, 0, sizeof(mp_state));
     mp_state.layout = layout;
@@ -547,6 +566,8 @@ void rebuild_multiplayer_layout(int track)
             &mp_state.counter_rows[i][COUNTER_TYPE_EXPERIENCE],
             &mp_state.counter_values[i][COUNTER_TYPE_EXPERIENCE], p);
     }
+
+    mp_battery_icon = add_low_battery_icon(screen_multiplayer);
 
     refresh_multiplayer_ui();
 }

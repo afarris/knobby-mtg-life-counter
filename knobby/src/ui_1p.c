@@ -5,6 +5,7 @@
 #include "game.h"
 #include "timer.h"
 #include "storage.h"
+#include "hw.h"
 
 // ---------- screens ----------
 lv_obj_t *screen_1p = NULL;
@@ -468,6 +469,14 @@ void build_main_screen(void)
         &counter_row_1p[COUNTER_TYPE_EXPERIENCE],
         &counter_value_1p[COUNTER_TYPE_EXPERIENCE]);
 
+    {
+        lv_obj_t *batt = lv_label_create(screen_1p);
+        lv_label_set_text(batt, LV_SYMBOL_BATTERY_EMPTY);
+        lv_obj_set_style_text_color(batt, lv_palette_main(LV_PALETTE_RED), 0);
+        lv_obj_set_style_text_font(batt, &lv_font_montserrat_22, 0);
+        lv_obj_align(batt, LV_ALIGN_TOP_MID, 0, 28);
+        battery_icon_register(batt);
+    }
 }
 
 void build_select_screen(void)

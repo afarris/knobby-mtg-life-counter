@@ -76,6 +76,7 @@ static void handle_back_navigation(lv_obj_t *screen)
     } else if (screen == screen_settings_page2) {
         lv_scr_load(screen_screen_settings_menu);
     } else if (screen == screen_settings) {
+        settings_save();
         lv_scr_load(screen_screen_settings_menu);
     } else if (screen == screen_battery) {
         lv_scr_load(screen_screen_settings_menu);

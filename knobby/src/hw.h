@@ -28,6 +28,9 @@ extern int battery_percent;
 #define LOW_BATTERY_VOLTAGE         3.35f   /* shutdown threshold (matches 0% curve) */
 #define LOW_BATTERY_COUNT           3       /* consecutive low readings before cutoff */
 #define LOW_BATTERY_WAKE_US         (15ULL * 1000000ULL)  /* deep sleep wake interval */
+#define LOW_BATTERY_INDICATOR_PCT   10      /* show solid icon below this percent */
+#define LOW_BATTERY_BLINK_PCT       5       /* blink the icon below this percent */
+#define BATTERY_BLINK_PERIOD_MS     500     /* low-battery icon blink cadence */
 
 // ---------- functions ----------
 void knob_hw_init(void);
@@ -37,6 +40,8 @@ int read_battery_percent(void);
 void change_brightness(int delta);
 bool in_undim_grace(void);
 void knob_enter_deep_sleep(void);
+void battery_icon_register(lv_obj_t *icon);
+void battery_icon_unregister(lv_obj_t *icon);
 
 #ifdef __cplusplus
 }
