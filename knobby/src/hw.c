@@ -30,6 +30,12 @@ static uint32_t last_activity_tick = 0;
 static uint32_t undim_tick = 0;
 static lv_timer_t *auto_dim_timer = NULL;
 
+#define BATTERY_ICON_MAX 8
+static lv_obj_t *battery_icons[BATTERY_ICON_MAX];
+static int battery_icon_count = 0;
+static bool battery_icon_blink_visible = true;
+static lv_timer_t *battery_icon_timer = NULL;
+
 // ---------- battery curve ----------
 static const float battery_curve_voltages[] = {
     3.35f, 3.55f, 3.68f, 3.74f, 3.80f, 3.88f, 3.96f, 4.06f, 4.18f
@@ -109,6 +115,53 @@ int read_battery_percent(void)
     update_battery_measurement(false);
     if (!battery_sample_valid) return -1;
     return battery_percent_from_voltage(battery_voltage);
+}
+
+// ---------- low-battery indicator ----------
+void battery_icon_register(lv_obj_t *icon)
+{
+    if (icon == NULL || battery_icon_count >= BATTERY_ICON_MAX) return;
+    battery_icons[battery_icon_count++] = icon;
+    lv_obj_add_flag(icon, LV_OBJ_FLAG_HIDDEN);
+}
+
+void battery_icon_unregister(lv_obj_t *icon)
+{
+    int i;
+    if (icon == NULL) return;
+    for (i = 0; i < battery_icon_count; i++) {
+        if (battery_icons[i] == icon) {
+            battery_icons[i] = battery_icons[--battery_icon_count];
+            return;
+        }
+    }
+}
+
+static void battery_icon_apply(bool visible)
+{
+    int i;
+    for (i = 0; i < battery_icon_count; i++) {
+        if (visible) lv_obj_clear_flag(battery_icons[i], LV_OBJ_FLAG_HIDDEN);
+        else         lv_obj_add_flag(battery_icons[i], LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void battery_icon_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    int pct = read_battery_percent();
+    if (pct < 0 || pct >= LOW_BATTERY_INDICATOR_PCT) {
+        battery_icon_blink_visible = true;
+        battery_icon_apply(false);
+        return;
+    }
+    if (pct >= LOW_BATTERY_BLINK_PCT) {
+        battery_icon_blink_visible = true;
+        battery_icon_apply(true);
+        return;
+    }
+    battery_icon_apply(battery_icon_blink_visible);
+    battery_icon_blink_visible = !battery_icon_blink_visible;
 }
 
 // ---------- brightness ----------
@@ -200,4 +253,5 @@ void knob_hw_init(void)
     auto_dim_setting = nvs_get_auto_dim();
     last_activity_tick = lv_tick_get();
     auto_dim_timer = lv_timer_create(auto_dim_timer_cb, AUTO_DIM_CHECK_PERIOD_MS, NULL);
+    battery_icon_timer = lv_timer_create(battery_icon_timer_cb, BATTERY_BLINK_PERIOD_MS, NULL);
 }

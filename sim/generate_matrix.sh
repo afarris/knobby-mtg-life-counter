@@ -269,6 +269,19 @@ v=${voltages[$((RANDOM % ${#voltages[@]}))]}
 shot "battery_${v}v.png" --screen battery --battery-voltage "$v"
 
 # ============================================================
+# 16b. Low-battery indicator on gameplay screens
+# ============================================================
+# 3.62V is ~8% (solid icon, 5-10% tier).  3.40V is ~3% (blink, <5% tier).
+# Note: blink screenshot captures the visible phase deterministically
+# because the icon shows on the first timer fire after entering low state.
+shot "lowbatt_solid_1p.png" --screen 1p --track 1 --battery-voltage 3.62
+shot "lowbatt_blink_1p.png" --screen 1p --track 1 --battery-voltage 3.40
+for track in 2 3 4; do
+    shot "lowbatt_solid_${track}p.png" --screen ${track}p --track "$track" \
+        --orientation 0 --battery-voltage 3.62
+done
+
+# ============================================================
 # 17. Dice with a result
 # ============================================================
 shot "dice_$((RANDOM % 20 + 1)).png" --screen dice --dice $((RANDOM % 20 + 1))
@@ -361,10 +374,12 @@ SEC_LIFE=(); SEC_LIFECOLOR=(); SEC_PERPLAYER=(); SEC_SELECTED=(); SEC_COUNTERS=(
 SEC_BRIGHT=(); SEC_COUNTER_EDIT=(); SEC_DAMAGE=(); SEC_SETTINGS=()
 SEC_TIMER=()
 SEC_MANA=()
+SEC_LOWBATT=()
 SEC_OTHER=()
 
 for f in "${FILES[@]}"; do
     case "$f" in
+        lowbatt_*)            SEC_LOWBATT+=("$f") ;;
         1p_preview_*)         SEC_1P_PREV+=("$f") ;;
         2p_*_preview_*)       SEC_2P_PREV+=("$f") ;;
         3p_*_preview_*)       SEC_3P_PREV+=("$f") ;;
@@ -399,6 +414,7 @@ write_section "Counter Edit" "${SEC_COUNTER_EDIT[@]}"
 write_section "Damage / Select" "${SEC_DAMAGE[@]}"
 write_section "Settings" "${SEC_SETTINGS[@]}"
 write_section "Mana Pool" "${SEC_MANA[@]}"
+write_section "Low Battery Indicator" "${SEC_LOWBATT[@]}"
 write_section "Other" "${SEC_OTHER[@]}"
 
 echo '</body></html>' >> "$INDEX"
