@@ -84,7 +84,7 @@ static int clamp_value(int value, int min_value, int max_value)
 
 static int scale_value(int value, int input_max, int output_max)
 {
-    if (value <= 0 || input_max <= 0 || output_max <= 0) return 0;
+    if (value < 0 || input_max <= 0 || output_max <= 0) return 0;
     return (int)(((int64_t)value * output_max) + (input_max / 2)) / input_max;
 }
 
@@ -230,8 +230,7 @@ void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
     progress = scale_value(distance - SWIPE_HINT_REVEAL_START,
                            KNOB_SWIPE_THRESHOLD - SWIPE_HINT_REVEAL_START,
                            SWIPE_HINT_OPACITY_MAX);
-    if (progress < SWIPE_HINT_OPACITY_MIN) progress = SWIPE_HINT_OPACITY_MIN;
-    if (progress > SWIPE_HINT_OPACITY_MAX) progress = SWIPE_HINT_OPACITY_MAX;
+    progress = clamp_value(progress, SWIPE_HINT_OPACITY_MIN, SWIPE_HINT_OPACITY_MAX);
     inset = SWIPE_HINT_EDGE_INSET +
             scale_value(distance - SWIPE_HINT_REVEAL_START,
                         KNOB_SWIPE_THRESHOLD,
