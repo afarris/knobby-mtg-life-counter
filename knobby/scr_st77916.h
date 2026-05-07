@@ -296,11 +296,6 @@ static bool tp_tracking = false;
 static bool tp_swiped = false;
 static lv_point_t tp_start = {0, 0};
 
-#define SWIPE_THRESHOLD 80
-#define SWIPE_MAX_LATERAL 120
-#define SWIPE_LEFT_EDGE_ZONE 80
-#define SWIPE_RIGHT_EDGE_ZONE 80
-
 static bool check_swipe(int cur_x, int cur_y)
 {
   int dx = cur_x - tp_start.x;
@@ -308,25 +303,29 @@ static bool check_swipe(int cur_x, int cur_y)
   int abs_dx = dx >= 0 ? dx : -dx;
   int abs_dy = dy >= 0 ? dy : -dy;
 
-  if (-dy > SWIPE_THRESHOLD && abs_dx < SWIPE_MAX_LATERAL) {
+  if (-dy > KNOB_SWIPE_THRESHOLD && abs_dx < KNOB_SWIPE_MAX_LATERAL) {
+    knob_swipe_hint_clear();
     knob_notify_swipe_up();
     lv_indev_reset(lv_indev_get_act(), NULL);
     return true;
-  } else if (dy > SWIPE_THRESHOLD && abs_dx < SWIPE_MAX_LATERAL) {
+  } else if (dy > KNOB_SWIPE_THRESHOLD && abs_dx < KNOB_SWIPE_MAX_LATERAL) {
+    knob_swipe_hint_clear();
     knob_notify_swipe_down();
     lv_indev_reset(lv_indev_get_act(), NULL);
     return true;
-  } else if (tp_start.x >= (SCREEN_RES_HOR - SWIPE_RIGHT_EDGE_ZONE) &&
-             -dx > SWIPE_THRESHOLD &&
-             abs_dy < SWIPE_MAX_LATERAL &&
+  } else if (tp_start.x >= (SCREEN_RES_HOR - KNOB_SWIPE_RIGHT_EDGE_ZONE) &&
+             -dx > KNOB_SWIPE_THRESHOLD &&
+             abs_dy < KNOB_SWIPE_MAX_LATERAL &&
              -dx > abs_dy) {
+    knob_swipe_hint_clear();
     knob_notify_swipe_left();
     lv_indev_reset(lv_indev_get_act(), NULL);
     return true;
-  } else if (tp_start.x <= SWIPE_LEFT_EDGE_ZONE &&
-             dx > SWIPE_THRESHOLD &&
-             abs_dy < SWIPE_MAX_LATERAL &&
+  } else if (tp_start.x <= KNOB_SWIPE_LEFT_EDGE_ZONE &&
+             dx > KNOB_SWIPE_THRESHOLD &&
+             abs_dy < KNOB_SWIPE_MAX_LATERAL &&
              dx > abs_dy) {
+    knob_swipe_hint_clear();
     knob_notify_swipe_right();
     lv_indev_reset(lv_indev_get_act(), NULL);
     return true;
@@ -353,6 +352,7 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
       // Reset swipe context on wake, but don't discard the touch
       tp_tracking = false;
       tp_swiped = false;
+      knob_swipe_hint_clear();
     }
     if (tp_swiped) {
       data->state = LV_INDEV_STATE_RELEASED;
@@ -364,9 +364,12 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
         tp_start.x = point.x;
         tp_start.y = point.y;
         tp_tracking = true;
-      } else if (check_swipe(point.x, point.y)) {
-        tp_swiped = true;
-        data->state = LV_INDEV_STATE_RELEASED;
+      } else {
+        knob_swipe_hint_update(tp_start.x, tp_start.y, point.x, point.y);
+        if (check_swipe(point.x, point.y)) {
+          tp_swiped = true;
+          data->state = LV_INDEV_STATE_RELEASED;
+        }
       }
     }
   }
@@ -377,6 +380,7 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     }
     tp_tracking = false;
     tp_swiped = false;
+    knob_swipe_hint_clear();
     data->state = LV_INDEV_STATE_RELEASED;
   }
 }
