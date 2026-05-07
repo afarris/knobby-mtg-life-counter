@@ -82,6 +82,12 @@ static int clamp_value(int value, int min_value, int max_value)
     return value;
 }
 
+static int scale_value(int value, int input_max, int output_max)
+{
+    if (value <= 0 || input_max <= 0 || output_max <= 0) return 0;
+    return (int)(((int64_t)value * output_max) + (input_max / 2)) / input_max;
+}
+
 static int get_display_width(void)
 {
     lv_disp_t *disp = lv_disp_get_default();
@@ -221,10 +227,15 @@ void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
 
     width = get_display_width();
     height = get_display_height();
-    progress = ((distance - SWIPE_HINT_REVEAL_START) * SWIPE_HINT_OPACITY_MAX) / (KNOB_SWIPE_THRESHOLD - SWIPE_HINT_REVEAL_START);
+    progress = scale_value(distance - SWIPE_HINT_REVEAL_START,
+                           KNOB_SWIPE_THRESHOLD - SWIPE_HINT_REVEAL_START,
+                           SWIPE_HINT_OPACITY_MAX);
     if (progress < SWIPE_HINT_OPACITY_MIN) progress = SWIPE_HINT_OPACITY_MIN;
     if (progress > SWIPE_HINT_OPACITY_MAX) progress = SWIPE_HINT_OPACITY_MAX;
-    inset = SWIPE_HINT_EDGE_INSET + ((distance - SWIPE_HINT_REVEAL_START) * SWIPE_HINT_TRAVEL) / KNOB_SWIPE_THRESHOLD;
+    inset = SWIPE_HINT_EDGE_INSET +
+            scale_value(distance - SWIPE_HINT_REVEAL_START,
+                        KNOB_SWIPE_THRESHOLD,
+                        SWIPE_HINT_TRAVEL);
     if (inset > (SWIPE_HINT_EDGE_INSET + SWIPE_HINT_TRAVEL)) {
         inset = SWIPE_HINT_EDGE_INSET + SWIPE_HINT_TRAVEL;
     }
@@ -256,7 +267,9 @@ void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
 
     lv_label_set_text(swipe_hint_icon, symbol);
     lv_obj_set_pos(swipe_hint, pos_x, pos_y);
-    lv_obj_set_style_bg_opa(swipe_hint, (lv_opa_t)((progress * SWIPE_HINT_BG_OPACITY_MAX) / SWIPE_HINT_OPACITY_MAX), 0);
+    lv_obj_set_style_bg_opa(swipe_hint,
+                            (lv_opa_t)scale_value(progress, SWIPE_HINT_OPACITY_MAX, SWIPE_HINT_BG_OPACITY_MAX),
+                            0);
     lv_obj_set_style_text_opa(swipe_hint_icon, (lv_opa_t)progress, 0);
     lv_obj_clear_flag(swipe_hint, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(swipe_hint);
