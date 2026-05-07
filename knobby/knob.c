@@ -29,6 +29,9 @@ static volatile bool swipe_right_pending = false;
 #define SWIPE_HINT_REVEAL_START 12
 #define SWIPE_HINT_TOP_EDGE_ZONE 80
 #define SWIPE_HINT_BOTTOM_EDGE_ZONE 80
+#define SWIPE_HINT_OPACITY_MAX 255
+#define SWIPE_HINT_OPACITY_MIN 48
+#define SWIPE_HINT_BG_OPACITY_MAX 120
 
 typedef enum {
     SWIPE_HINT_NONE = 0,
@@ -72,7 +75,7 @@ static bool is_player_screen(lv_obj_t *screen)
            screen == screen_multiplayer;
 }
 
-static int clamp_coord(int value, int min_value, int max_value)
+static int clamp_value(int value, int min_value, int max_value)
 {
     if (value < min_value) return min_value;
     if (value > max_value) return max_value;
@@ -218,16 +221,16 @@ void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
 
     width = get_display_width();
     height = get_display_height();
-    progress = ((distance - SWIPE_HINT_REVEAL_START) * 255) / (KNOB_SWIPE_THRESHOLD - SWIPE_HINT_REVEAL_START);
-    if (progress < 48) progress = 48;
-    if (progress > 255) progress = 255;
+    progress = ((distance - SWIPE_HINT_REVEAL_START) * SWIPE_HINT_OPACITY_MAX) / (KNOB_SWIPE_THRESHOLD - SWIPE_HINT_REVEAL_START);
+    if (progress < SWIPE_HINT_OPACITY_MIN) progress = SWIPE_HINT_OPACITY_MIN;
+    if (progress > SWIPE_HINT_OPACITY_MAX) progress = SWIPE_HINT_OPACITY_MAX;
     inset = SWIPE_HINT_EDGE_INSET + ((distance - SWIPE_HINT_REVEAL_START) * SWIPE_HINT_TRAVEL) / KNOB_SWIPE_THRESHOLD;
     if (inset > (SWIPE_HINT_EDGE_INSET + SWIPE_HINT_TRAVEL)) {
         inset = SWIPE_HINT_EDGE_INSET + SWIPE_HINT_TRAVEL;
     }
 
-    pos_x = clamp_coord(start_x - (SWIPE_HINT_SIZE / 2), SWIPE_HINT_EDGE_INSET, width - SWIPE_HINT_SIZE - SWIPE_HINT_EDGE_INSET);
-    pos_y = clamp_coord(start_y - (SWIPE_HINT_SIZE / 2), SWIPE_HINT_EDGE_INSET, height - SWIPE_HINT_SIZE - SWIPE_HINT_EDGE_INSET);
+    pos_x = clamp_value(start_x - (SWIPE_HINT_SIZE / 2), SWIPE_HINT_EDGE_INSET, width - SWIPE_HINT_SIZE - SWIPE_HINT_EDGE_INSET);
+    pos_y = clamp_value(start_y - (SWIPE_HINT_SIZE / 2), SWIPE_HINT_EDGE_INSET, height - SWIPE_HINT_SIZE - SWIPE_HINT_EDGE_INSET);
     symbol = LV_SYMBOL_LEFT;
 
     switch (direction) {
@@ -253,7 +256,7 @@ void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
 
     lv_label_set_text(swipe_hint_icon, symbol);
     lv_obj_set_pos(swipe_hint, pos_x, pos_y);
-    lv_obj_set_style_bg_opa(swipe_hint, (lv_opa_t)((progress * 120) / 255), 0);
+    lv_obj_set_style_bg_opa(swipe_hint, (lv_opa_t)((progress * SWIPE_HINT_BG_OPACITY_MAX) / SWIPE_HINT_OPACITY_MAX), 0);
     lv_obj_set_style_text_opa(swipe_hint_icon, (lv_opa_t)progress, 0);
     lv_obj_clear_flag(swipe_hint, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(swipe_hint);
