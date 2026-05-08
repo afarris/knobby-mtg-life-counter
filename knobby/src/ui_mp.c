@@ -461,6 +461,7 @@ static void event_multiplayer_open_menu(lv_event_t *e)
     if (player_eliminated[player]) {
         menu_player = player;
         load_screen_if_needed(screen_eliminated_player_menu);
+        lv_indev_wait_release(lv_indev_get_act());
         return;
     }
 
@@ -471,6 +472,7 @@ static void event_multiplayer_open_menu(lv_event_t *e)
     selected_player = player;
     refresh_multiplayer_ui();
     open_player_menu(selected_player);
+    lv_indev_wait_release(lv_indev_get_act());
 }
 
 /* ---------- selection timeout ---------- */

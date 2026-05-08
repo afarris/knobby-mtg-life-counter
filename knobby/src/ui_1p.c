@@ -317,6 +317,7 @@ static void event_open_1p_menu(lv_event_t *e)
 {
     (void)e;
     open_player_menu(0);
+    lv_indev_wait_release(lv_indev_get_act());
 }
 
 static void event_select_enemy(lv_event_t *e)

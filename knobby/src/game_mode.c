@@ -112,6 +112,7 @@ static void event_gm_life_custom(lv_event_t *e)
     (void)e;
     refresh_custom_life_ui();
     lv_scr_load(screen_custom_life);
+    lv_indev_wait_release(lv_indev_get_act());
 }
 
 static void event_gm_apply(lv_event_t *e)
@@ -124,6 +125,7 @@ static void event_gm_apply(lv_event_t *e)
     reset_all_values();
     rebuild_multiplayer_layout(temp_players_to_track);
     back_to_main();
+    lv_indev_wait_release(lv_indev_get_act());
 }
 
 // ---------- screen builders ----------
