@@ -109,6 +109,7 @@ static void event_menu_rename_all(lv_event_t *e)
 {
     (void)e;
     open_rename_all_screen();
+    lv_indev_wait_release(lv_indev_get_act());
 }
 
 static void event_menu_cmd_damage(lv_event_t *e)
@@ -146,6 +147,7 @@ static void event_menu_eliminate(lv_event_t *e)
     (void)e;
     manual_eliminate_player(menu_player);
     back_to_main();
+    lv_indev_wait_release(lv_indev_get_act());
 }
 
 static void event_counter_commander_tax(lv_event_t *e)
