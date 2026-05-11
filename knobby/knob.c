@@ -26,20 +26,9 @@ static volatile bool swipe_right_pending = false;
 #define SWIPE_HINT_SIZE 52
 #define SWIPE_HINT_EDGE_INSET 12
 #define SWIPE_HINT_TRAVEL 18
-#define SWIPE_HINT_REVEAL_START 12
-#define SWIPE_HINT_TOP_EDGE_ZONE 80
-#define SWIPE_HINT_BOTTOM_EDGE_ZONE 80
 #define SWIPE_HINT_OPACITY_MAX 255
 #define SWIPE_HINT_OPACITY_MIN 48
 #define SWIPE_HINT_BG_OPACITY_MAX 120
-
-typedef enum {
-    SWIPE_HINT_NONE = 0,
-    SWIPE_HINT_LEFT,
-    SWIPE_HINT_RIGHT,
-    SWIPE_HINT_UP,
-    SWIPE_HINT_DOWN
-} swipe_hint_direction_t;
 
 // ---------- knob event queue ----------
 static int last_knob_cont = 0;
@@ -100,67 +89,73 @@ static int get_display_height(void)
     return (disp != NULL) ? (int)lv_disp_get_ver_res(disp) : 360;
 }
 
-static swipe_hint_direction_t get_swipe_hint_direction(lv_obj_t *screen,
-                                                       int start_x, int start_y,
-                                                       int dx, int dy)
+static bool is_axis_dominant(int primary, int secondary, int min_travel)
+{
+    if (primary < min_travel) return false;
+    if (secondary > KNOB_SWIPE_MAX_LATERAL) return false;
+    return (primary * KNOB_SWIPE_AXIS_BIAS_DEN) >=
+           (secondary * KNOB_SWIPE_AXIS_BIAS_NUM);
+}
+
+knob_swipe_direction_t knob_classify_swipe_direction(lv_obj_t *screen,
+                                                     int start_x, int start_y,
+                                                     int dx, int dy,
+                                                     int min_travel)
 {
     int width = get_display_width();
     int height = get_display_height();
     int abs_dx = dx >= 0 ? dx : -dx;
     int abs_dy = dy >= 0 ? dy : -dy;
 
+    if (screen == NULL || screen == screen_intro) return KNOB_SWIPE_NONE;
+
     if (is_player_screen(screen)) {
         if (start_x <= KNOB_SWIPE_LEFT_EDGE_ZONE &&
-            dx > SWIPE_HINT_REVEAL_START &&
-            abs_dy < KNOB_SWIPE_MAX_LATERAL &&
-            dx >= abs_dy) {
-            return SWIPE_HINT_RIGHT;
+            dx > 0 &&
+            is_axis_dominant(dx, abs_dy, min_travel)) {
+            return KNOB_SWIPE_RIGHT;
         }
         if (start_x >= (width - KNOB_SWIPE_RIGHT_EDGE_ZONE) &&
-            -dx > SWIPE_HINT_REVEAL_START &&
-            abs_dy < KNOB_SWIPE_MAX_LATERAL &&
-            -dx >= abs_dy) {
-            return SWIPE_HINT_LEFT;
+            dx < 0 &&
+            is_axis_dominant(-dx, abs_dy, min_travel)) {
+            return KNOB_SWIPE_LEFT;
         }
-        if (start_y <= SWIPE_HINT_TOP_EDGE_ZONE &&
-            dy > SWIPE_HINT_REVEAL_START &&
-            abs_dx < KNOB_SWIPE_MAX_LATERAL &&
-            dy >= abs_dx) {
-            return SWIPE_HINT_DOWN;
+        if (start_y <= KNOB_SWIPE_TOP_EDGE_ZONE &&
+            dy > 0 &&
+            is_axis_dominant(dy, abs_dx, min_travel)) {
+            return KNOB_SWIPE_DOWN;
         }
-        if (start_y >= (height - SWIPE_HINT_BOTTOM_EDGE_ZONE) &&
-            -dy > SWIPE_HINT_REVEAL_START &&
-            abs_dx < KNOB_SWIPE_MAX_LATERAL &&
-            -dy >= abs_dx) {
-            return SWIPE_HINT_UP;
+        if (start_y >= (height - KNOB_SWIPE_BOTTOM_EDGE_ZONE) &&
+            dy < 0 &&
+            is_axis_dominant(-dy, abs_dx, min_travel)) {
+            return KNOB_SWIPE_UP;
         }
     } else {
         if (start_x >= (width - KNOB_SWIPE_RIGHT_EDGE_ZONE) &&
-            -dx > SWIPE_HINT_REVEAL_START &&
-            abs_dy < KNOB_SWIPE_MAX_LATERAL &&
-            -dx >= abs_dy) {
-            return SWIPE_HINT_LEFT;
+            dx < 0 &&
+            is_axis_dominant(-dx, abs_dy, min_travel)) {
+            return KNOB_SWIPE_LEFT;
         }
-        if (dy > SWIPE_HINT_REVEAL_START &&
-            abs_dx < KNOB_SWIPE_MAX_LATERAL &&
-            dy >= abs_dx) {
-            return SWIPE_HINT_DOWN;
+        if (start_y <= KNOB_SWIPE_TOP_EDGE_ZONE &&
+            dy > 0 &&
+            is_axis_dominant(dy, abs_dx, min_travel)) {
+            return KNOB_SWIPE_DOWN;
         }
     }
 
-    return SWIPE_HINT_NONE;
+    return KNOB_SWIPE_NONE;
 }
 
-static int get_swipe_hint_distance(swipe_hint_direction_t direction, int dx, int dy)
+static int get_swipe_hint_distance(knob_swipe_direction_t direction, int dx, int dy)
 {
     switch (direction) {
-    case SWIPE_HINT_LEFT:
+    case KNOB_SWIPE_LEFT:
         return -dx;
-    case SWIPE_HINT_RIGHT:
+    case KNOB_SWIPE_RIGHT:
         return dx;
-    case SWIPE_HINT_UP:
+    case KNOB_SWIPE_UP:
         return -dy;
-    case SWIPE_HINT_DOWN:
+    case KNOB_SWIPE_DOWN:
         return dy;
     default:
         return 0;
@@ -200,7 +195,7 @@ void knob_swipe_hint_clear(void)
 void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
 {
     lv_obj_t *screen = lv_scr_act();
-    swipe_hint_direction_t direction;
+    knob_swipe_direction_t direction;
     int dx = cur_x - start_x;
     int dy = cur_y - start_y;
     int distance;
@@ -213,26 +208,27 @@ void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
     const char *symbol;
 
     ensure_swipe_hint();
-    direction = get_swipe_hint_direction(screen, start_x, start_y, dx, dy);
-    if (direction == SWIPE_HINT_NONE) {
+    direction = knob_classify_swipe_direction(screen, start_x, start_y, dx, dy,
+                                              KNOB_SWIPE_HINT_REVEAL_START);
+    if (direction == KNOB_SWIPE_NONE) {
         knob_swipe_hint_clear();
         return;
     }
 
     distance = get_swipe_hint_distance(direction, dx, dy);
-    if (distance <= SWIPE_HINT_REVEAL_START) {
+    if (distance <= KNOB_SWIPE_HINT_REVEAL_START) {
         knob_swipe_hint_clear();
         return;
     }
 
     width = get_display_width();
     height = get_display_height();
-    progress = scale_value(distance - SWIPE_HINT_REVEAL_START,
-                           KNOB_SWIPE_THRESHOLD - SWIPE_HINT_REVEAL_START,
+        progress = scale_value(distance - KNOB_SWIPE_HINT_REVEAL_START,
+                   KNOB_SWIPE_THRESHOLD - KNOB_SWIPE_HINT_REVEAL_START,
                            SWIPE_HINT_OPACITY_MAX);
     progress = clamp_value(progress, SWIPE_HINT_OPACITY_MIN, SWIPE_HINT_OPACITY_MAX);
     inset = SWIPE_HINT_EDGE_INSET +
-            scale_value(distance - SWIPE_HINT_REVEAL_START,
+            scale_value(distance - KNOB_SWIPE_HINT_REVEAL_START,
                         KNOB_SWIPE_THRESHOLD,
                         SWIPE_HINT_TRAVEL);
     if (inset > (SWIPE_HINT_EDGE_INSET + SWIPE_HINT_TRAVEL)) {
@@ -244,19 +240,19 @@ void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
     symbol = LV_SYMBOL_LEFT;
 
     switch (direction) {
-    case SWIPE_HINT_RIGHT:
+    case KNOB_SWIPE_RIGHT:
         symbol = LV_SYMBOL_RIGHT;
         pos_x = inset;
         break;
-    case SWIPE_HINT_LEFT:
+    case KNOB_SWIPE_LEFT:
         symbol = LV_SYMBOL_LEFT;
         pos_x = width - SWIPE_HINT_SIZE - inset;
         break;
-    case SWIPE_HINT_DOWN:
+    case KNOB_SWIPE_DOWN:
         symbol = LV_SYMBOL_DOWN;
         pos_y = inset;
         break;
-    case SWIPE_HINT_UP:
+    case KNOB_SWIPE_UP:
         symbol = LV_SYMBOL_UP;
         pos_y = height - SWIPE_HINT_SIZE - inset;
         break;
@@ -279,6 +275,21 @@ static void open_menu_for_screen(lv_obj_t *screen)
     if (is_player_screen(screen)) {
         previous_screen = screen;
         open_quad_menu();
+    }
+}
+
+static void handle_back_navigation(lv_obj_t *screen);
+
+static void handle_swipe_navigation(knob_swipe_direction_t direction, lv_obj_t *screen)
+{
+    if (screen == NULL) return;
+
+    if (direction == KNOB_SWIPE_NONE) return;
+
+    if (is_player_screen(screen)) {
+        open_menu_for_screen(screen);
+    } else if (direction == KNOB_SWIPE_LEFT || direction == KNOB_SWIPE_DOWN) {
+        handle_back_navigation(screen);
     }
 }
 
@@ -505,39 +516,26 @@ void knob_change(knob_event_t k, int cont)
 void knob_process_pending(void)
 {
     uint8_t processed = 0;
+    lv_obj_t *cur = lv_scr_act();
 
     if (swipe_up_pending) {
         swipe_up_pending = false;
-        open_menu_for_screen(lv_scr_act());
+        handle_swipe_navigation(KNOB_SWIPE_UP, cur);
     }
 
     if (swipe_down_pending) {
-        lv_obj_t *cur;
-
         swipe_down_pending = false;
-        cur = lv_scr_act();
-
-        if (is_player_screen(cur))
-            open_menu_for_screen(cur);
-        else
-            handle_back_navigation(cur);
+        handle_swipe_navigation(KNOB_SWIPE_DOWN, cur);
     }
 
     if (swipe_left_pending) {
-        lv_obj_t *cur;
-
         swipe_left_pending = false;
-        cur = lv_scr_act();
-
-        if (is_player_screen(cur))
-            open_menu_for_screen(cur);
-        else
-            handle_back_navigation(cur);
+        handle_swipe_navigation(KNOB_SWIPE_LEFT, cur);
     }
 
     if (swipe_right_pending) {
         swipe_right_pending = false;
-        open_menu_for_screen(lv_scr_act());
+        handle_swipe_navigation(KNOB_SWIPE_RIGHT, cur);
     }
 
     while (knob_event_tail != knob_event_head && processed < 8U) {

@@ -537,7 +537,7 @@ void rebuild_multiplayer_layout(int track)
         lv_obj_set_style_border_width(panel, 1, 0);
         lv_obj_set_style_border_color(panel, lv_color_black(), 0);
         lv_obj_set_style_shadow_width(panel, 0, 0);
-        lv_obj_add_event_cb(panel, event_multiplayer_select, LV_EVENT_CLICKED, (void *)(intptr_t)p);
+        lv_obj_add_event_cb(panel, event_multiplayer_select, LV_EVENT_SHORT_CLICKED, (void *)(intptr_t)p);
         lv_obj_add_event_cb(panel, event_multiplayer_open_menu, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)p);
         mp_state.panels[i] = panel;
 

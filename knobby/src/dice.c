@@ -76,7 +76,7 @@ void build_dice_screen(void)
     lv_obj_align(label_dice_result, LV_ALIGN_CENTER, 0, -10);
 
     label_dice_hint = lv_label_create(screen_dice);
-    lv_label_set_text(label_dice_hint, "long press to re-roll");
+    lv_label_set_text(label_dice_hint, "Hold to re-roll");
     lv_obj_set_style_text_color(label_dice_hint, lv_color_hex(0x8A8A8A), 0);
     lv_obj_set_style_text_font(label_dice_hint, &lv_font_montserrat_14, 0);
     lv_obj_align(label_dice_hint, LV_ALIGN_CENTER, 0, 42);
