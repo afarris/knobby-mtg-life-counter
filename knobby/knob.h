@@ -41,6 +41,9 @@ knob_swipe_direction_t knob_classify_swipe_direction(lv_obj_t *screen,
 													 int min_travel);
 void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y);
 void knob_swipe_hint_clear(void);
+bool knob_swipe_hint_fully_revealed(lv_obj_t *screen,
+									int start_x, int start_y,
+									int cur_x, int cur_y);
 void knob_notify_swipe_up(void);
 void knob_notify_swipe_down(void);
 void knob_notify_swipe_left(void);

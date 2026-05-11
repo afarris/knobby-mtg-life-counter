@@ -162,6 +162,33 @@ static int get_swipe_hint_distance(knob_swipe_direction_t direction, int dx, int
     }
 }
 
+static int get_swipe_hint_progress(knob_swipe_direction_t direction, int dx, int dy)
+{
+    int distance = get_swipe_hint_distance(direction, dx, dy);
+
+    return clamp_value(scale_value(distance - KNOB_SWIPE_HINT_REVEAL_START,
+                                   KNOB_SWIPE_THRESHOLD - KNOB_SWIPE_HINT_REVEAL_START,
+                                   SWIPE_HINT_OPACITY_MAX),
+                       SWIPE_HINT_OPACITY_MIN,
+                       SWIPE_HINT_OPACITY_MAX);
+}
+
+bool knob_swipe_hint_fully_revealed(lv_obj_t *screen,
+                                    int start_x, int start_y,
+                                    int cur_x, int cur_y)
+{
+    knob_swipe_direction_t direction;
+    int dx = cur_x - start_x;
+    int dy = cur_y - start_y;
+
+    direction = knob_classify_swipe_direction(screen, start_x, start_y,
+                                              dx, dy,
+                                              KNOB_SWIPE_HINT_REVEAL_START);
+    if (direction == KNOB_SWIPE_NONE) return false;
+
+    return get_swipe_hint_progress(direction, dx, dy) >= SWIPE_HINT_OPACITY_MAX;
+}
+
 static void ensure_swipe_hint(void)
 {
     if (swipe_hint != NULL) return;
@@ -223,10 +250,7 @@ void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
 
     width = get_display_width();
     height = get_display_height();
-        progress = scale_value(distance - KNOB_SWIPE_HINT_REVEAL_START,
-                   KNOB_SWIPE_THRESHOLD - KNOB_SWIPE_HINT_REVEAL_START,
-                           SWIPE_HINT_OPACITY_MAX);
-    progress = clamp_value(progress, SWIPE_HINT_OPACITY_MIN, SWIPE_HINT_OPACITY_MAX);
+    progress = get_swipe_hint_progress(direction, dx, dy);
     inset = SWIPE_HINT_EDGE_INSET +
             scale_value(distance - KNOB_SWIPE_HINT_REVEAL_START,
                         KNOB_SWIPE_THRESHOLD,

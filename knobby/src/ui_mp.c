@@ -458,6 +458,7 @@ static void event_multiplayer_open_menu(lv_event_t *e)
     int player = (int)(intptr_t)lv_event_get_user_data(e);
 
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
+    if (selected_player >= 0) return;
     if (player_eliminated[player]) {
         menu_player = player;
         load_screen_if_needed(screen_eliminated_player_menu);

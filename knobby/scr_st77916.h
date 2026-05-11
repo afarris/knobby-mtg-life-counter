@@ -339,6 +339,10 @@ static bool check_swipe(int cur_x, int cur_y)
   direction = knob_classify_swipe_direction(lv_scr_act(), tp_start.x, tp_start.y,
                                             dx, dy, KNOB_SWIPE_THRESHOLD);
   if (direction == KNOB_SWIPE_NONE) return false;
+  if (!knob_swipe_hint_fully_revealed(lv_scr_act(), tp_start.x, tp_start.y,
+                                      cur_x, cur_y)) {
+    return false;
+  }
 
   knob_swipe_hint_clear();
   if (direction == KNOB_SWIPE_UP) {
@@ -396,17 +400,13 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
         tp_last.x = point.x;
         tp_last.y = point.y;
         knob_swipe_hint_update(tp_start.x, tp_start.y, point.x, point.y);
-        if (check_swipe(point.x, point.y)) {
-          tp_swiped = true;
-          data->state = LV_INDEV_STATE_RELEASED;
-        }
       }
     }
   }
   else
   {
     if (tp_tracking && !tp_swiped && touch_point_valid(tp_last.x, tp_last.y)) {
-      check_swipe(tp_last.x, tp_last.y);
+      tp_swiped = check_swipe(tp_last.x, tp_last.y);
     }
     touch_reset_state();
     data->state = LV_INDEV_STATE_RELEASED;
