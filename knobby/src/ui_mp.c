@@ -470,9 +470,7 @@ static void event_multiplayer_open_menu(lv_event_t *e)
         life_preview_commit_cb(NULL);
     }
 
-    selected_player = player;
-    refresh_multiplayer_ui();
-    open_player_menu(selected_player);
+    open_player_menu(player);
     lv_indev_wait_release(lv_indev_get_act());
 }
 
