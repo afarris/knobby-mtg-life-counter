@@ -82,7 +82,14 @@
 #define LV_DISP_DEF_REFR_PERIOD 25      /*[ms]*/
 
 /*Input device read period in milliseconds*/
-#define LV_INDEV_DEF_READ_PERIOD 50     /*[ms]*/
+#define LV_INDEV_DEF_READ_PERIOD 35     /*[ms]*/
+
+/*Pointer motion tolerance before LVGL treats the gesture as a drag.*/
+#define LV_INDEV_DEF_DRAG_LIMIT 14      /*[px]*/
+
+/*Balanced hold time so long presses stay distinct from taps and swipes.*/
+#define LV_INDEV_DEF_LONG_PRESS_TIME 500    /*[ms]*/
+#define LV_INDEV_DEF_LONG_PRESS_REP_TIME 250 /*[ms]*/
 
 /*Use a custom tick source that tells the elapsed time in milliseconds.
  *It removes the need to manually update the tick with `lv_tick_inc()`)*/

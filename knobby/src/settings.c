@@ -360,7 +360,7 @@ void build_quad_menus(void)
         {"Settings", event_quad_screen_settings, true, LV_EVENT_CLICKED},
         {"Game\nMode", event_general_game_mode, true, LV_EVENT_CLICKED},
         {"Tools",             event_quad_tools, true, LV_EVENT_CLICKED},
-        {"Reset\n(Long Press)", event_general_reset, true, LV_EVENT_LONG_PRESSED},
+        {"Reset\n(Hold)", event_general_reset, true, LV_EVENT_LONG_PRESSED},
     };
     build_quad_screen(&screen_quad_menu, main_items);
 

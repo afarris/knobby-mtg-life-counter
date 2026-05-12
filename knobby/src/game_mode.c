@@ -136,8 +136,8 @@ void build_game_mode_menu_screen(void)
     quad_item_t items[4] = {
         {"Players\n4",          event_gm_num_players,      true, LV_EVENT_CLICKED},
         {"Track\n1",            event_gm_players_to_track, true, LV_EVENT_CLICKED},
-        {"Life\n40",            event_gm_life_cycle,       true, LV_EVENT_CLICKED},
-        {"Apply\n(Long Press)", event_gm_apply,            true, LV_EVENT_LONG_PRESSED},
+        {"Life\n40",            event_gm_life_cycle,       true, LV_EVENT_SHORT_CLICKED},
+        {"Apply\n(Hold)",       event_gm_apply,            true, LV_EVENT_LONG_PRESSED},
     };
     build_quad_screen(&screen_game_mode_menu, items);
 

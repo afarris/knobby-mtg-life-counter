@@ -458,6 +458,7 @@ static void event_multiplayer_open_menu(lv_event_t *e)
     int player = (int)(intptr_t)lv_event_get_user_data(e);
 
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
+    if (selected_player >= 0) return;
     if (player_eliminated[player]) {
         menu_player = player;
         load_screen_if_needed(screen_eliminated_player_menu);
@@ -469,9 +470,7 @@ static void event_multiplayer_open_menu(lv_event_t *e)
         life_preview_commit_cb(NULL);
     }
 
-    selected_player = player;
-    refresh_multiplayer_ui();
-    open_player_menu(selected_player);
+    open_player_menu(player);
     lv_indev_wait_release(lv_indev_get_act());
 }
 
@@ -537,7 +536,7 @@ void rebuild_multiplayer_layout(int track)
         lv_obj_set_style_border_width(panel, 1, 0);
         lv_obj_set_style_border_color(panel, lv_color_black(), 0);
         lv_obj_set_style_shadow_width(panel, 0, 0);
-        lv_obj_add_event_cb(panel, event_multiplayer_select, LV_EVENT_CLICKED, (void *)(intptr_t)p);
+        lv_obj_add_event_cb(panel, event_multiplayer_select, LV_EVENT_SHORT_CLICKED, (void *)(intptr_t)p);
         lv_obj_add_event_cb(panel, event_multiplayer_open_menu, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)p);
         mp_state.panels[i] = panel;
 

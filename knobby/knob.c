@@ -16,10 +16,19 @@
 
 // ---------- swipe state ----------
 static lv_obj_t *previous_screen = NULL;
+static lv_obj_t *swipe_hint = NULL;
+static lv_obj_t *swipe_hint_icon = NULL;
 static volatile bool swipe_up_pending = false;
 static volatile bool swipe_down_pending = false;
 static volatile bool swipe_left_pending = false;
 static volatile bool swipe_right_pending = false;
+
+#define SWIPE_HINT_SIZE 52
+#define SWIPE_HINT_EDGE_INSET 12
+#define SWIPE_HINT_TRAVEL 18
+#define SWIPE_HINT_OPACITY_MAX 255
+#define SWIPE_HINT_OPACITY_MIN 48
+#define SWIPE_HINT_BG_OPACITY_MAX 120
 
 // ---------- knob event queue ----------
 static int last_knob_cont = 0;
@@ -55,11 +64,256 @@ static bool is_player_screen(lv_obj_t *screen)
            screen == screen_multiplayer;
 }
 
+static int clamp_value(int value, int min_value, int max_value)
+{
+    if (value < min_value) return min_value;
+    if (value > max_value) return max_value;
+    return value;
+}
+
+static int scale_value(int value, int input_max, int output_max)
+{
+    if (value < 0 || input_max <= 0 || output_max <= 0) return 0;
+    return (int)(((int64_t)value * output_max) + (input_max / 2)) / input_max;
+}
+
+static int get_display_width(void)
+{
+    lv_disp_t *disp = lv_disp_get_default();
+    return (disp != NULL) ? (int)lv_disp_get_hor_res(disp) : 360;
+}
+
+static int get_display_height(void)
+{
+    lv_disp_t *disp = lv_disp_get_default();
+    return (disp != NULL) ? (int)lv_disp_get_ver_res(disp) : 360;
+}
+
+static bool is_axis_dominant(int primary, int secondary, int min_travel)
+{
+    if (primary < min_travel) return false;
+    if (secondary > KNOB_SWIPE_MAX_LATERAL) return false;
+    return (primary * KNOB_SWIPE_AXIS_BIAS_DEN) >=
+           (secondary * KNOB_SWIPE_AXIS_BIAS_NUM);
+}
+
+knob_swipe_direction_t knob_classify_swipe_direction(lv_obj_t *screen,
+                                                     int start_x, int start_y,
+                                                     int dx, int dy,
+                                                     int min_travel)
+{
+    int width = get_display_width();
+    int height = get_display_height();
+    int abs_dx = dx >= 0 ? dx : -dx;
+    int abs_dy = dy >= 0 ? dy : -dy;
+
+    if (screen == NULL || screen == screen_intro) return KNOB_SWIPE_NONE;
+
+    if (is_player_screen(screen)) {
+        if (start_x <= KNOB_SWIPE_LEFT_EDGE_ZONE &&
+            dx > 0 &&
+            is_axis_dominant(dx, abs_dy, min_travel)) {
+            return KNOB_SWIPE_RIGHT;
+        }
+        if (start_x >= (width - KNOB_SWIPE_RIGHT_EDGE_ZONE) &&
+            dx < 0 &&
+            is_axis_dominant(-dx, abs_dy, min_travel)) {
+            return KNOB_SWIPE_LEFT;
+        }
+        if (start_y <= KNOB_SWIPE_TOP_EDGE_ZONE &&
+            dy > 0 &&
+            is_axis_dominant(dy, abs_dx, min_travel)) {
+            return KNOB_SWIPE_DOWN;
+        }
+        if (start_y >= (height - KNOB_SWIPE_BOTTOM_EDGE_ZONE) &&
+            dy < 0 &&
+            is_axis_dominant(-dy, abs_dx, min_travel)) {
+            return KNOB_SWIPE_UP;
+        }
+    } else {
+        if (start_x >= (width - KNOB_SWIPE_RIGHT_EDGE_ZONE) &&
+            dx < 0 &&
+            is_axis_dominant(-dx, abs_dy, min_travel)) {
+            return KNOB_SWIPE_LEFT;
+        }
+        if (start_y <= KNOB_SWIPE_TOP_EDGE_ZONE &&
+            dy > 0 &&
+            is_axis_dominant(dy, abs_dx, min_travel)) {
+            return KNOB_SWIPE_DOWN;
+        }
+    }
+
+    return KNOB_SWIPE_NONE;
+}
+
+static int get_swipe_hint_distance(knob_swipe_direction_t direction, int dx, int dy)
+{
+    switch (direction) {
+    case KNOB_SWIPE_LEFT:
+        return -dx;
+    case KNOB_SWIPE_RIGHT:
+        return dx;
+    case KNOB_SWIPE_UP:
+        return -dy;
+    case KNOB_SWIPE_DOWN:
+        return dy;
+    default:
+        return 0;
+    }
+}
+
+static int get_swipe_hint_progress(knob_swipe_direction_t direction, int dx, int dy)
+{
+    int distance = get_swipe_hint_distance(direction, dx, dy);
+
+    return clamp_value(scale_value(distance - KNOB_SWIPE_HINT_REVEAL_START,
+                                   KNOB_SWIPE_THRESHOLD - KNOB_SWIPE_HINT_REVEAL_START,
+                                   SWIPE_HINT_OPACITY_MAX),
+                       SWIPE_HINT_OPACITY_MIN,
+                       SWIPE_HINT_OPACITY_MAX);
+}
+
+bool knob_swipe_hint_fully_revealed(lv_obj_t *screen,
+                                    int start_x, int start_y,
+                                    int cur_x, int cur_y)
+{
+    knob_swipe_direction_t direction;
+    int dx = cur_x - start_x;
+    int dy = cur_y - start_y;
+
+    direction = knob_classify_swipe_direction(screen, start_x, start_y,
+                                              dx, dy,
+                                              KNOB_SWIPE_HINT_REVEAL_START);
+    if (direction == KNOB_SWIPE_NONE) return false;
+
+    return get_swipe_hint_progress(direction, dx, dy) >= SWIPE_HINT_OPACITY_MAX;
+}
+
+static void ensure_swipe_hint(void)
+{
+    if (swipe_hint != NULL) return;
+
+    swipe_hint = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(swipe_hint);
+    lv_obj_set_size(swipe_hint, SWIPE_HINT_SIZE, SWIPE_HINT_SIZE);
+    lv_obj_set_style_radius(swipe_hint, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(swipe_hint, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(swipe_hint, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(swipe_hint, 0, 0);
+    lv_obj_set_style_outline_width(swipe_hint, 0, 0);
+    lv_obj_set_style_pad_all(swipe_hint, 0, 0);
+    lv_obj_clear_flag(swipe_hint, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(swipe_hint, LV_OBJ_FLAG_HIDDEN);
+
+    swipe_hint_icon = lv_label_create(swipe_hint);
+    lv_label_set_text(swipe_hint_icon, LV_SYMBOL_LEFT);
+    lv_obj_set_style_text_font(swipe_hint_icon, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_color(swipe_hint_icon, lv_color_white(), 0);
+    lv_obj_set_style_text_opa(swipe_hint_icon, LV_OPA_TRANSP, 0);
+    lv_obj_center(swipe_hint_icon);
+}
+
+void knob_swipe_hint_clear(void)
+{
+    if (swipe_hint == NULL) return;
+    lv_obj_add_flag(swipe_hint, LV_OBJ_FLAG_HIDDEN);
+}
+
+void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
+{
+    lv_obj_t *screen = lv_scr_act();
+    knob_swipe_direction_t direction;
+    int dx = cur_x - start_x;
+    int dy = cur_y - start_y;
+    int distance;
+    int width;
+    int height;
+    int progress;
+    int inset;
+    int pos_x;
+    int pos_y;
+    const char *symbol;
+
+    ensure_swipe_hint();
+    direction = knob_classify_swipe_direction(screen, start_x, start_y, dx, dy,
+                                              KNOB_SWIPE_HINT_REVEAL_START);
+    if (direction == KNOB_SWIPE_NONE) {
+        knob_swipe_hint_clear();
+        return;
+    }
+
+    distance = get_swipe_hint_distance(direction, dx, dy);
+    if (distance <= KNOB_SWIPE_HINT_REVEAL_START) {
+        knob_swipe_hint_clear();
+        return;
+    }
+
+    width = get_display_width();
+    height = get_display_height();
+    progress = get_swipe_hint_progress(direction, dx, dy);
+    inset = SWIPE_HINT_EDGE_INSET +
+            scale_value(distance - KNOB_SWIPE_HINT_REVEAL_START,
+                        KNOB_SWIPE_THRESHOLD,
+                        SWIPE_HINT_TRAVEL);
+    if (inset > (SWIPE_HINT_EDGE_INSET + SWIPE_HINT_TRAVEL)) {
+        inset = SWIPE_HINT_EDGE_INSET + SWIPE_HINT_TRAVEL;
+    }
+
+    pos_x = clamp_value(start_x - (SWIPE_HINT_SIZE / 2), SWIPE_HINT_EDGE_INSET, width - SWIPE_HINT_SIZE - SWIPE_HINT_EDGE_INSET);
+    pos_y = clamp_value(start_y - (SWIPE_HINT_SIZE / 2), SWIPE_HINT_EDGE_INSET, height - SWIPE_HINT_SIZE - SWIPE_HINT_EDGE_INSET);
+    symbol = LV_SYMBOL_LEFT;
+
+    switch (direction) {
+    case KNOB_SWIPE_RIGHT:
+        symbol = LV_SYMBOL_RIGHT;
+        pos_x = inset;
+        break;
+    case KNOB_SWIPE_LEFT:
+        symbol = LV_SYMBOL_LEFT;
+        pos_x = width - SWIPE_HINT_SIZE - inset;
+        break;
+    case KNOB_SWIPE_DOWN:
+        symbol = LV_SYMBOL_DOWN;
+        pos_y = inset;
+        break;
+    case KNOB_SWIPE_UP:
+        symbol = LV_SYMBOL_UP;
+        pos_y = height - SWIPE_HINT_SIZE - inset;
+        break;
+    default:
+        break;
+    }
+
+    lv_label_set_text(swipe_hint_icon, symbol);
+    lv_obj_set_pos(swipe_hint, pos_x, pos_y);
+    lv_obj_set_style_bg_opa(swipe_hint,
+                            (lv_opa_t)scale_value(progress, SWIPE_HINT_OPACITY_MAX, SWIPE_HINT_BG_OPACITY_MAX),
+                            0);
+    lv_obj_set_style_text_opa(swipe_hint_icon, (lv_opa_t)progress, 0);
+    lv_obj_clear_flag(swipe_hint, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(swipe_hint);
+}
+
 static void open_menu_for_screen(lv_obj_t *screen)
 {
     if (is_player_screen(screen)) {
         previous_screen = screen;
         open_quad_menu();
+    }
+}
+
+static void handle_back_navigation(lv_obj_t *screen);
+
+static void handle_swipe_navigation(knob_swipe_direction_t direction, lv_obj_t *screen)
+{
+    if (screen == NULL) return;
+
+    if (direction == KNOB_SWIPE_NONE) return;
+
+    if (is_player_screen(screen)) {
+        open_menu_for_screen(screen);
+    } else if (direction == KNOB_SWIPE_LEFT || direction == KNOB_SWIPE_DOWN) {
+        handle_back_navigation(screen);
     }
 }
 
@@ -148,6 +402,7 @@ void knob_cb(lv_event_t *e)
 void knob_gui(void)
 {
     knob_hw_init();
+    ensure_swipe_hint();
 
     build_intro_screen();
     lv_scr_load(screen_intro);
@@ -285,39 +540,26 @@ void knob_change(knob_event_t k, int cont)
 void knob_process_pending(void)
 {
     uint8_t processed = 0;
+    lv_obj_t *cur = lv_scr_act();
 
     if (swipe_up_pending) {
         swipe_up_pending = false;
-        open_menu_for_screen(lv_scr_act());
+        handle_swipe_navigation(KNOB_SWIPE_UP, cur);
     }
 
     if (swipe_down_pending) {
-        lv_obj_t *cur;
-
         swipe_down_pending = false;
-        cur = lv_scr_act();
-
-        if (is_player_screen(cur))
-            open_menu_for_screen(cur);
-        else
-            handle_back_navigation(cur);
+        handle_swipe_navigation(KNOB_SWIPE_DOWN, cur);
     }
 
     if (swipe_left_pending) {
-        lv_obj_t *cur;
-
         swipe_left_pending = false;
-        cur = lv_scr_act();
-
-        if (is_player_screen(cur))
-            open_menu_for_screen(cur);
-        else
-            handle_back_navigation(cur);
+        handle_swipe_navigation(KNOB_SWIPE_LEFT, cur);
     }
 
     if (swipe_right_pending) {
         swipe_right_pending = false;
-        open_menu_for_screen(lv_scr_act());
+        handle_swipe_navigation(KNOB_SWIPE_RIGHT, cur);
     }
 
     while (knob_event_tail != knob_event_head && processed < 8U) {

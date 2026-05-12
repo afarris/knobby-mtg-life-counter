@@ -261,7 +261,7 @@ void build_mana_screen(void)
         lv_obj_add_event_cb(btn, event_mana_clear, LV_EVENT_LONG_PRESSED, NULL);
 
         label = lv_label_create(btn);
-        lv_label_set_text(label, "Clear All\n(Long Press)");
+        lv_label_set_text(label, "Clear All\n(Hold)");
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
         lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);

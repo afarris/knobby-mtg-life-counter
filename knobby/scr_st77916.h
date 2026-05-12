@@ -7,6 +7,7 @@
 #include <ESP_Panel_Library.h>
 // #include "bidi_switch_knob.h"
 #include "knob.h"
+#include "src/hw.h"
 
 #define SCREEN_RES_HOR 360
 #define SCREEN_RES_VER 360
@@ -295,42 +296,67 @@ void scr_display_on(void)
 static bool tp_tracking = false;
 static bool tp_swiped = false;
 static lv_point_t tp_start = {0, 0};
+static lv_point_t tp_last = {0, 0};
+static uint32_t tp_start_tick = 0;
 
-#define SWIPE_THRESHOLD 80
-#define SWIPE_MAX_LATERAL 120
-#define SWIPE_LEFT_EDGE_ZONE 80
-#define SWIPE_RIGHT_EDGE_ZONE 80
+static int touch_abs(int value)
+{
+  return (value >= 0) ? value : -value;
+}
+
+static bool touch_point_valid(int x, int y)
+{
+  return x >= 0 && x < SCREEN_RES_HOR && y >= 0 && y < SCREEN_RES_VER;
+}
+
+static void touch_reset_state(void)
+{
+  tp_tracking = false;
+  tp_swiped = false;
+  tp_start.x = 0;
+  tp_start.y = 0;
+  tp_last.x = 0;
+  tp_last.y = 0;
+  tp_start_tick = 0;
+  knob_swipe_hint_clear();
+}
 
 static bool check_swipe(int cur_x, int cur_y)
 {
+  knob_swipe_direction_t direction;
   int dx = cur_x - tp_start.x;
   int dy = cur_y - tp_start.y;
-  int abs_dx = dx >= 0 ? dx : -dx;
-  int abs_dy = dy >= 0 ? dy : -dy;
+  if (!tp_tracking || tp_start_tick == 0) return false;
+  if (!touch_point_valid(cur_x, cur_y)) return false;
+  if (in_undim_grace()) return false;
 
-  if (-dy > SWIPE_THRESHOLD && abs_dx < SWIPE_MAX_LATERAL) {
-    knob_notify_swipe_up();
-    lv_indev_reset(lv_indev_get_act(), NULL);
-    return true;
-  } else if (dy > SWIPE_THRESHOLD && abs_dx < SWIPE_MAX_LATERAL) {
-    knob_notify_swipe_down();
-    lv_indev_reset(lv_indev_get_act(), NULL);
-    return true;
-  } else if (tp_start.x >= (SCREEN_RES_HOR - SWIPE_RIGHT_EDGE_ZONE) &&
-             -dx > SWIPE_THRESHOLD &&
-             abs_dy < SWIPE_MAX_LATERAL &&
-             -dx > abs_dy) {
-    knob_notify_swipe_left();
-    lv_indev_reset(lv_indev_get_act(), NULL);
-    return true;
-  } else if (tp_start.x <= SWIPE_LEFT_EDGE_ZONE &&
-             dx > SWIPE_THRESHOLD &&
-             abs_dy < SWIPE_MAX_LATERAL &&
-             dx > abs_dy) {
-    knob_notify_swipe_right();
-    lv_indev_reset(lv_indev_get_act(), NULL);
-    return true;
+  if (touch_abs(dx) < KNOB_TOUCH_JITTER_PX && touch_abs(dy) < KNOB_TOUCH_JITTER_PX) {
+    return false;
   }
+
+  if (lv_tick_elaps(tp_start_tick) < KNOB_SWIPE_MIN_DURATION_MS) return false;
+
+  direction = knob_classify_swipe_direction(lv_scr_act(), tp_start.x, tp_start.y,
+                                            dx, dy, KNOB_SWIPE_THRESHOLD);
+  if (direction == KNOB_SWIPE_NONE) return false;
+  if (!knob_swipe_hint_fully_revealed(lv_scr_act(), tp_start.x, tp_start.y,
+                                      cur_x, cur_y)) {
+    return false;
+  }
+
+  knob_swipe_hint_clear();
+  if (direction == KNOB_SWIPE_UP) {
+    knob_notify_swipe_up();
+  } else if (direction == KNOB_SWIPE_DOWN) {
+    knob_notify_swipe_down();
+  } else if (direction == KNOB_SWIPE_LEFT) {
+    knob_notify_swipe_left();
+  } else if (direction == KNOB_SWIPE_RIGHT) {
+    knob_notify_swipe_right();
+  }
+  lv_indev_reset(lv_indev_get_act(), NULL);
+  return true;
+
   return false;
 }
 
@@ -348,11 +374,15 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
   touch_irq_pending = false;
   if (read_touch_result > 0)
   {
+    if (!touch_point_valid(point.x, point.y)) {
+      touch_reset_state();
+      data->state = LV_INDEV_STATE_RELEASED;
+      return;
+    }
+
     bool was_dimmed = activity_kick();
     if (was_dimmed) {
-      // Reset swipe context on wake, but don't discard the touch
-      tp_tracking = false;
-      tp_swiped = false;
+      touch_reset_state();
     }
     if (tp_swiped) {
       data->state = LV_INDEV_STATE_RELEASED;
@@ -363,20 +393,22 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
       if (!tp_tracking) {
         tp_start.x = point.x;
         tp_start.y = point.y;
+        tp_last = tp_start;
+        tp_start_tick = lv_tick_get();
         tp_tracking = true;
-      } else if (check_swipe(point.x, point.y)) {
-        tp_swiped = true;
-        data->state = LV_INDEV_STATE_RELEASED;
+      } else {
+        tp_last.x = point.x;
+        tp_last.y = point.y;
+        knob_swipe_hint_update(tp_start.x, tp_start.y, point.x, point.y);
       }
     }
   }
   else
   {
-    if (tp_tracking && !tp_swiped) {
-      check_swipe(data->point.x, data->point.y);
+    if (tp_tracking && !tp_swiped && touch_point_valid(tp_last.x, tp_last.y)) {
+      tp_swiped = check_swipe(tp_last.x, tp_last.y);
     }
-    tp_tracking = false;
-    tp_swiped = false;
+    touch_reset_state();
     data->state = LV_INDEV_STATE_RELEASED;
   }
 }
