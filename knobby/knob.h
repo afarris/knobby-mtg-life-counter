@@ -30,7 +30,6 @@ typedef enum {
 #define KNOB_SWIPE_AXIS_BIAS_DEN 2
 
 void knob_gui(void);
-void knob_cb(lv_event_t *e);
 
 void knob_change(knob_event_t k,int cont);
 void knob_process_pending(void);

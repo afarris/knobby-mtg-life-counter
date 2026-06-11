@@ -821,8 +821,3 @@ void build_multiplayer_screen(void)
     rebuild_multiplayer_layout(nvs_get_players_to_track());
 }
 
-void open_multiplayer_screen(void)
-{
-    refresh_multiplayer_ui();
-    load_screen_if_needed(screen_multiplayer);
-}

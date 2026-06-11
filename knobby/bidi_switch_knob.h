@@ -60,7 +60,6 @@ extern "C"
      *         - ESP_OK  Success
      *         - ESP_FAIL Failure
      */
-    esp_err_t iot_knob_delete(knob_handle_t knob_handle);
 
     /**
      * @brief Register the knob event callback function

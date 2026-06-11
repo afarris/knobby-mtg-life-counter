@@ -31,8 +31,6 @@ static volatile bool swipe_right_pending = false;
 #define SWIPE_HINT_BG_OPACITY_MAX 120
 
 // ---------- knob event queue ----------
-static int last_knob_cont = 0;
-static bool knob_initialized = false;
 static knob_input_event_t knob_event_queue[KNOB_EVENT_QUEUE_SIZE];
 static volatile uint8_t knob_event_head = 0;
 static volatile uint8_t knob_event_tail = 0;
@@ -385,10 +383,6 @@ void reset_all_values(void)
     start_player_selection_animation();
 }
 
-void knob_cb(lv_event_t *e)
-{
-    (void)e;
-}
 
 // ---------- init ----------
 void knob_gui(void)
@@ -511,13 +505,7 @@ void knob_change(knob_event_t k, int cont)
 {
     uint8_t next_head;
 
-    if (!knob_initialized)
-    {
-        last_knob_cont = cont;
-        knob_initialized = true;
-    }
-
-    last_knob_cont = cont;
+    (void)cont;
 
     next_head = (uint8_t)((knob_event_head + 1U) % KNOB_EVENT_QUEUE_SIZE);
     if (next_head == knob_event_tail) {
@@ -525,7 +513,6 @@ void knob_change(knob_event_t k, int cont)
     }
 
     knob_event_queue[knob_event_head].event = k;
-    knob_event_queue[knob_event_head].cont = cont;
     knob_event_head = next_head;
 }
 

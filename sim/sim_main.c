@@ -28,10 +28,6 @@
 #define SCREEN_W 360
 #define SCREEN_H 360
 
-/* Globals normally defined in scr_st77916.h */
-lv_indev_t *indev_knob = NULL;
-int encoder_cont = 0;
-
 /* ---- Framebuffer ---- */
 static lv_color_t framebuffer[SCREEN_W * SCREEN_H];
 static lv_color_t draw_buf_data[SCREEN_W * 72];

@@ -167,46 +167,6 @@ _encoder_deinit:
     return NULL;
 }
 
-esp_err_t iot_knob_delete(knob_handle_t knob_handle)
-{
-    esp_err_t ret = ESP_OK;
-    KNOB_CHECK(NULL != knob_handle, "Pointer of handle is invalid", ESP_ERR_INVALID_ARG);
-    knob_dev_t *knob = (knob_dev_t *)knob_handle;
-    ret = knob_gpio_deinit((int)(knob->usr_data));
-    KNOB_CHECK(ESP_OK == ret, "knob deinit failed", ESP_FAIL);
-    knob_dev_t **curr;
-    for (curr = &s_head_handle; *curr;)
-    {
-        knob_dev_t *entry = *curr;
-        if (entry == knob)
-        {
-            *curr = entry->next;
-            free(entry);
-        }
-        else
-        {
-            curr = &entry->next;
-        }
-    }
-
-    uint16_t number = 0;
-    knob_dev_t *target = s_head_handle;
-    while (target)
-    {
-        target = target->next;
-        number++;
-    }
-    ESP_LOGD(TAG, "remain knob number=%d", number);
-
-    if (0 == number && s_is_timer_running)
-    {
-        esp_timer_stop(s_knob_timer_handle);
-        esp_timer_delete(s_knob_timer_handle);
-        s_is_timer_running = false;
-    }
-
-    return ESP_OK;
-}
 
 esp_err_t iot_knob_register_cb(knob_handle_t knob_handle, knob_event_t event, knob_cb_t cb, void *usr_data)
 {

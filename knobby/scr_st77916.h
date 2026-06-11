@@ -34,12 +34,10 @@ static int stage_dirty_y2;
 static lv_disp_draw_buf_t draw_buf;
 static lv_disp_drv_t disp_drv;
 static lv_indev_t *indev_touchpad;
-lv_indev_t *indev_knob;
 static ESP_PanelLcd *lcd = NULL;
 static ESP_PanelTouch *touch = NULL;
 static int32_t ctx_diff;
 static lv_indev_state_t encoder_state;
-int encoder_cont = 0;
 static volatile bool touch_irq_pending = false;
 #define USE_CUSTOM_INIT_CMD 0 // 是否用自定义的初始化代码
 
@@ -292,49 +290,6 @@ IRAM_ATTR bool onRefreshFinishCallback(void *user_data)
   return false;
 }
 
-void setRotation(uint8_t rot)
-{
-  if (rot > 3)
-    return;
-  if (lcd == NULL || touch == NULL)
-    return;
-
-  switch (rot)
-  {
-  case 1: // 顺时针90度
-    lcd->swapXY(true);
-    lcd->mirrorX(true);
-    lcd->mirrorY(false);
-    touch->swapXY(true);
-    touch->mirrorX(true);
-    touch->mirrorY(false);
-    break;
-  case 2:
-    lcd->swapXY(false);
-    lcd->mirrorX(true);
-    lcd->mirrorY(true);
-    touch->swapXY(false);
-    touch->mirrorX(true);
-    touch->mirrorY(true);
-    break;
-  case 3:
-    lcd->swapXY(true);
-    lcd->mirrorX(false);
-    lcd->mirrorY(true);
-    touch->swapXY(true);
-    touch->mirrorX(false);
-    touch->mirrorY(true);
-    break;
-  default:
-    lcd->swapXY(false);
-    lcd->mirrorX(false);
-    lcd->mirrorY(false);
-    touch->swapXY(false);
-    touch->mirrorX(false);
-    touch->mirrorY(false);
-    break;
-  }
-}
 
 void scr_display_on(void)
 {
@@ -342,7 +297,6 @@ void scr_display_on(void)
 }
 
 static bool tp_tracking = false;
-static bool tp_swiped = false;
 static lv_point_t tp_start = {0, 0};
 static lv_point_t tp_last = {0, 0};
 static uint32_t tp_start_tick = 0;
@@ -360,7 +314,6 @@ static bool touch_point_valid(int x, int y)
 static void touch_reset_state(void)
 {
   tp_tracking = false;
-  tp_swiped = false;
   tp_start.x = 0;
   tp_start.y = 0;
   tp_last.x = 0;
@@ -404,8 +357,6 @@ static bool check_swipe(int cur_x, int cur_y)
   }
   lv_indev_reset(lv_indev_get_act(), NULL);
   return true;
-
-  return false;
 }
 
 static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
@@ -432,29 +383,25 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     if (was_dimmed) {
       touch_reset_state();
     }
-    if (tp_swiped) {
-      data->state = LV_INDEV_STATE_RELEASED;
+    data->point.x = point.x;
+    data->point.y = point.y;
+    data->state = LV_INDEV_STATE_PRESSED;
+    if (!tp_tracking) {
+      tp_start.x = point.x;
+      tp_start.y = point.y;
+      tp_last = tp_start;
+      tp_start_tick = lv_tick_get();
+      tp_tracking = true;
     } else {
-      data->point.x = point.x;
-      data->point.y = point.y;
-      data->state = LV_INDEV_STATE_PRESSED;
-      if (!tp_tracking) {
-        tp_start.x = point.x;
-        tp_start.y = point.y;
-        tp_last = tp_start;
-        tp_start_tick = lv_tick_get();
-        tp_tracking = true;
-      } else {
-        tp_last.x = point.x;
-        tp_last.y = point.y;
-        knob_swipe_hint_update(tp_start.x, tp_start.y, point.x, point.y);
-      }
+      tp_last.x = point.x;
+      tp_last.y = point.y;
+      knob_swipe_hint_update(tp_start.x, tp_start.y, point.x, point.y);
     }
   }
   else
   {
-    if (tp_tracking && !tp_swiped && touch_point_valid(tp_last.x, tp_last.y)) {
-      tp_swiped = check_swipe(tp_last.x, tp_last.y);
+    if (tp_tracking && touch_point_valid(tp_last.x, tp_last.y)) {
+      check_swipe(tp_last.x, tp_last.y);
     }
     touch_reset_state();
     data->state = LV_INDEV_STATE_RELEASED;
@@ -641,7 +588,7 @@ void scr_lvgl_init()
   iot_knob_register_cb(s_knob, KNOB_LEFT, _knob_left_cb, &ctx_diff);
   iot_knob_register_cb(s_knob, KNOB_RIGHT, _knob_right_cb, &ctx_diff);
   
-  indev_knob = indev_knob_init(&s_knob);
+  indev_knob_init(&s_knob);
 }
 
 #endif

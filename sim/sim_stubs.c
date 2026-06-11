@@ -203,7 +203,6 @@ knob_handle_t iot_knob_create(const knob_config_t *config)
     return (knob_handle_t)1; /* non-NULL dummy */
 }
 
-esp_err_t iot_knob_delete(knob_handle_t h) { (void)h; return ESP_OK; }
 esp_err_t iot_knob_register_cb(knob_handle_t h, knob_event_t e, knob_cb_t cb, void *d)
 {
     (void)h; (void)e; (void)cb; (void)d;
