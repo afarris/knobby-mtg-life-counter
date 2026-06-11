@@ -560,6 +560,15 @@ static void event_multiplayer_select(lv_event_t *e)
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
     if (player_eliminated[player]) return;
 
+    /* A tap during the first-player roulette stops the spin and leaves
+       nothing selected (the spinning highlight is not a real selection). */
+    if (player_selection_animation_active()) {
+        stop_player_selection_animation();
+        selection_clear();
+        refresh_multiplayer_ui();
+        return;
+    }
+
     /* Capture state before committing: the commit clears the selection in
        multi-select mode, so we can't read it afterwards. */
     had_pending = life_preview_active;
@@ -603,6 +612,17 @@ static void event_multiplayer_open_menu(lv_event_t *e)
 
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
 
+    if (player_selection_animation_active()) {
+        stop_player_selection_animation();
+        selection_clear();
+    }
+
+    /* Resolve any pending dialed delta before leaving the screen, so the
+       auto-commit can't fire later against a context the user left. */
+    if (life_preview_active) {
+        life_preview_commit_cb(NULL);
+    }
+
     /* A long-press is a deliberate gesture, so it always opens the
        pressed player's menu (e.g. to apply commander damage), even when
        one or more players are selected for life changes; the selection
@@ -614,10 +634,6 @@ static void event_multiplayer_open_menu(lv_event_t *e)
         return;
     }
 
-    if (life_preview_active) {
-        life_preview_commit_cb(NULL);
-    }
-
     open_player_menu(player);
     lv_indev_wait_release(lv_indev_get_act());
 }
@@ -626,6 +642,12 @@ static void event_multiplayer_open_menu(lv_event_t *e)
 static void select_timeout_cb(lv_timer_t *timer)
 {
     (void)timer;
+    /* Apply a still-pending dialed delta rather than silently dropping it.
+       (Today the 3s preview always commits before the >=5s timeout, but
+       nothing else enforces that ordering.) */
+    if (life_preview_active) {
+        life_preview_commit_cb(NULL);
+    }
     selection_clear();
     if (select_timeout_timer != NULL)
         lv_timer_pause(select_timeout_timer);

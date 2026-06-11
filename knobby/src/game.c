@@ -542,6 +542,10 @@ void change_player_life(int delta)
     int min_down = LIFE_MIN;
     int i;
 
+    /* The roulette walks the selection every tick, so a delta dialed
+       mid-spin would land on whichever player the wheel stops at. */
+    if (player_selection_animation_active()) return;
+
     if (selection_count() == 0) return;
 
     select_kick_timer();
@@ -760,4 +764,9 @@ void stop_player_selection_animation(void)
         lv_timer_del(player_select_anim_timer);
         player_select_anim_timer = NULL;
     }
+}
+
+bool player_selection_animation_active(void)
+{
+    return player_select_anim_timer != NULL && player_select_anim_steps > 0;
 }
