@@ -18,7 +18,19 @@
 #define CONFIG_KNOB_HIGH_LIMIT     1
 #define CONFIG_KNOB_LOW_LIMIT      1
 
+#define STAGE_BOUNCE_ROWS 72
+
 static lv_color_t *disp_draw_buf;
+/* PSRAM full-frame staging: rendered bands are assembled here and pushed
+   to the panel back-to-back at SPI speed on the frame's last band, so the
+   GRAM write is one fast wipe instead of a render-paced band-by-band
+   sweep. SPI DMA cannot read PSRAM directly on this stack, so the push
+   bounces through disp_draw_buf in synchronous chunks — safe because the
+   last band is already staged, leaving the render buffer unused until the
+   flush returns. NULL = staging unavailable, per-band pushes as before. */
+static lv_color_t *frame_stage;
+static int stage_dirty_y1;
+static int stage_dirty_y2;
 static lv_disp_draw_buf_t draw_buf;
 static lv_disp_drv_t disp_drv;
 static lv_indev_t *indev_touchpad;
@@ -230,11 +242,47 @@ const esp_lcd_panel_vendor_init_cmd_t lcd_init_cmd[] = {
 static void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
 {
   ESP_PanelLcd *lcd = (ESP_PanelLcd *)disp->user_data;
-  const int offsetx1 = area->x1;
-  const int offsetx2 = area->x2;
-  const int offsety1 = area->y1;
-  const int offsety2 = area->y2;
-  lcd->drawBitmap(offsetx1, offsety1, offsetx2 - offsetx1 + 1, offsety2 - offsety1 + 1, (const uint8_t *)color_p);
+
+  if (frame_stage != NULL) {
+    const int w = area->x2 - area->x1 + 1;
+    int y;
+
+    for (y = area->y1; y <= area->y2; y++) {
+      memcpy(&frame_stage[y * SCREEN_RES_HOR + area->x1],
+             &color_p[(y - area->y1) * w], (size_t)w * sizeof(lv_color_t));
+    }
+    if (area->y1 < stage_dirty_y1) stage_dirty_y1 = area->y1;
+    if (area->y2 > stage_dirty_y2) stage_dirty_y2 = area->y2;
+
+    if (!lv_disp_flush_is_last(disp)) {
+      lv_disp_flush_ready(disp);
+      return;
+    }
+
+    /* Last band of the frame: push the dirty row range back-to-back via
+       the internal bounce buffer (synchronous chunks, ~15ms total), then
+       release LVGL. */
+    {
+      const int y1 = stage_dirty_y1;
+      const int y2 = stage_dirty_y2;
+      int cy;
+      stage_dirty_y1 = SCREEN_RES_VER;
+      stage_dirty_y2 = -1;
+      for (cy = y1; cy <= y2; cy += STAGE_BOUNCE_ROWS) {
+        int ch = y2 - cy + 1;
+        if (ch > STAGE_BOUNCE_ROWS) ch = STAGE_BOUNCE_ROWS;
+        memcpy(disp_draw_buf, &frame_stage[cy * SCREEN_RES_HOR],
+               (size_t)ch * SCREEN_RES_HOR * sizeof(lv_color_t));
+        lcd->drawBitmap(0, cy, SCREEN_RES_HOR, ch,
+                        (const uint8_t *)disp_draw_buf, 1000);
+      }
+      lv_disp_flush_ready(disp);
+    }
+    return;
+  }
+
+  lcd->drawBitmap(area->x1, area->y1, area->x2 - area->x1 + 1,
+                  area->y2 - area->y1 + 1, (const uint8_t *)color_p);
 }
 
 IRAM_ATTR bool onRefreshFinishCallback(void *user_data)
@@ -554,9 +602,14 @@ void scr_lvgl_init()
     lcd->mirrorY(true);
     touch->mirrorY(true);
   }
-  size_t lv_cache_rows = 72;
+  size_t lv_cache_rows = STAGE_BOUNCE_ROWS;
 
   disp_draw_buf = (lv_color_t *)heap_caps_malloc(lv_cache_rows * SCREEN_RES_HOR * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  frame_stage = (lv_color_t *)heap_caps_malloc(
+      SCREEN_RES_VER * SCREEN_RES_HOR * sizeof(lv_color_t),
+      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  stage_dirty_y1 = SCREEN_RES_VER;
+  stage_dirty_y2 = -1;
   lv_init();
   lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, SCREEN_RES_HOR * lv_cache_rows);
 
