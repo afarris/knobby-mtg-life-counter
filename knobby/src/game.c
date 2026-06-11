@@ -692,6 +692,10 @@ static void player_select_anim_cb(lv_timer_t *timer)
     // Move to next player (clockwise logic mapping to bottom/left/top/right)
     roulette_idx = (roulette_idx + 1) % track;
     selection_set_single(roulette_idx);
+    /* Restart the deselect-timeout countdown like any selection change,
+       so a timer left running from before the reset can't fire mid-spin
+       and blank the selection for a tick. */
+    select_kick_timer();
     refresh_player_ui();
 
     player_select_anim_steps--;
@@ -727,6 +731,7 @@ void start_player_selection_animation(void)
 
     roulette_idx = 0;
     selection_set_single(0);
+    select_kick_timer();
 
     lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
     lv_timer_resume(player_select_anim_timer);
