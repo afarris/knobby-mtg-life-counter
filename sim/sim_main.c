@@ -304,22 +304,7 @@ static void populate_random_counters(void)
             player_counters[p][t] = rand() % 100;
 }
 
-static void populate_random_log(void)
-{
-    int i;
-    const uint8_t event_types[] = {LOG_EVT_LIFE, LOG_EVT_CMD_DAMAGE, LOG_EVT_COUNTER};
-    for (i = 0; i < 15; i++) {
-        int player = rand() % 4;
-        int delta = (rand() % 20) - 10;
-        uint8_t evt = event_types[rand() % 3];
-        int source = -1;
-        if (delta == 0) delta = 1;
-        if (evt == LOG_EVT_CMD_DAMAGE) source = (player + 1) % 4;
-        else if (evt == LOG_EVT_COUNTER) { source = rand() % COUNTER_TYPE_COUNT; if (delta < 0) delta = -delta; }
-        sim_tick_advance(5000 + (uint32_t)(rand() % 30000));
-        damage_log_add(player, delta, evt, source);
-    }
-}
+/* random-log fixture lives in sim_stubs.c (shared with the SDL sim) */
 
 /* ---- Main ---- */
 int main(int argc, char *argv[])
@@ -567,7 +552,7 @@ int main(int argc, char *argv[])
         if (do_random_counters) \
             populate_random_counters(); \
         if (do_random_log) { \
-            populate_random_log(); \
+            sim_populate_random_log(); \
             open_damage_log_screen(); \
         } \
         if (turn_number_set) { \

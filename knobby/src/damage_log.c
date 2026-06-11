@@ -15,10 +15,18 @@ static int damage_log_count = 0;
 static int damage_log_head = 0;
 
 // ---------- screen ----------
+/* Labels are rendered one page at a time: a full 256-entry ring as one
+   widget per entry would eat most of the 128KB LVGL heap and hard-freeze
+   the device on alloc failure (LV_ASSERT_HANDLER). */
+#define LOG_PAGE_SIZE 32
+
 lv_obj_t *screen_damage_log = NULL;
 static lv_obj_t *damage_log_container = NULL;
 static lv_obj_t *delete_btn = NULL;
-static int damage_log_selected = -1;  // index into visible list (0 = newest)
+static lv_obj_t *page_label = NULL;
+static int damage_log_selected = -1;  // index into the log, 0 = newest
+static int damage_log_page = 0;       // rendered page, derived from selection
+static lv_style_t log_label_style;    // shared by all entry labels
 
 // ---------- log operations ----------
 void damage_log_add(int player, int delta, uint8_t event_type, int source)
@@ -48,7 +56,11 @@ void damage_log_select_next(void)
     if (damage_log_selected < damage_log_count - 1) {
         damage_log_selected++;
     }
-    update_selection_highlight();
+    if (damage_log_selected / LOG_PAGE_SIZE != damage_log_page) {
+        refresh_damage_log_ui();
+    } else {
+        update_selection_highlight();
+    }
 }
 
 void damage_log_select_prev(void)
@@ -57,7 +69,11 @@ void damage_log_select_prev(void)
     if (damage_log_selected > 0) {
         damage_log_selected--;
     }
-    update_selection_highlight();
+    if (damage_log_selected / LOG_PAGE_SIZE != damage_log_page) {
+        refresh_damage_log_ui();
+    } else {
+        update_selection_highlight();
+    }
 }
 
 void damage_log_undo_selected(void)
@@ -144,13 +160,14 @@ static void format_log_line(damage_log_entry_t *entry, char *buf, size_t buf_sz)
 static void update_selection_highlight(void)
 {
     int i;
+    int first = damage_log_page * LOG_PAGE_SIZE;
+    int sel_child = damage_log_selected - first;
     uint32_t child_count = lv_obj_get_child_cnt(damage_log_container);
 
-    for (i = 0; i < (int)child_count && i < damage_log_count; i++) {
-        int idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+    for (i = 0; i < (int)child_count && first + i < damage_log_count; i++) {
         lv_obj_t *lbl = lv_obj_get_child(damage_log_container, i);
 
-        if (i == damage_log_selected) {
+        if (i == sel_child) {
             lv_obj_set_style_bg_color(lbl, lv_color_hex(0x333333), 0);
             lv_obj_set_style_bg_opa(lbl, LV_OPA_COVER, 0);
         } else {
@@ -159,8 +176,8 @@ static void update_selection_highlight(void)
     }
 
     /* Scroll selected item into view */
-    if (damage_log_selected >= 0 && damage_log_selected < (int)child_count) {
-        lv_obj_t *sel = lv_obj_get_child(damage_log_container, damage_log_selected);
+    if (sel_child >= 0 && sel_child < (int)child_count) {
+        lv_obj_t *sel = lv_obj_get_child(damage_log_container, sel_child);
         lv_coord_t sel_y = lv_obj_get_y(sel);
         lv_coord_t sel_h = lv_obj_get_height(sel);
         lv_coord_t cont_h = lv_obj_get_height(damage_log_container);
@@ -185,7 +202,7 @@ static void update_selection_highlight(void)
 
 static void refresh_damage_log_ui(void)
 {
-    int i, idx;
+    int i, idx, first, last;
     char buf[80];
 
     lv_obj_clean(damage_log_container);
@@ -196,11 +213,22 @@ static void refresh_damage_log_ui(void)
         lv_obj_set_style_text_color(lbl, lv_color_hex(0x7A7A7A), 0);
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
         damage_log_selected = -1;
+        damage_log_page = 0;
+        if (page_label != NULL) lv_obj_add_flag(page_label, LV_OBJ_FLAG_HIDDEN);
         update_selection_highlight();
         return;
     }
 
-    for (i = 0; i < damage_log_count; i++) {
+    if (damage_log_selected >= damage_log_count) {
+        damage_log_selected = damage_log_count - 1;
+    }
+    damage_log_page = (damage_log_selected > 0) ? damage_log_selected / LOG_PAGE_SIZE : 0;
+
+    first = damage_log_page * LOG_PAGE_SIZE;
+    last = first + LOG_PAGE_SIZE;
+    if (last > damage_log_count) last = damage_log_count;
+
+    for (i = first; i < last; i++) {
         idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
 
         format_log_line(&damage_log[idx], buf, sizeof(buf));
@@ -208,11 +236,7 @@ static void refresh_damage_log_ui(void)
         lv_obj_t *lbl = lv_label_create(damage_log_container);
         lv_label_set_text(lbl, buf);
         lv_obj_set_width(lbl, 280);
-        lv_obj_set_style_pad_left(lbl, 4, 0);
-        lv_obj_set_style_pad_right(lbl, 4, 0);
-        lv_obj_set_style_pad_top(lbl, 2, 0);
-        lv_obj_set_style_pad_bottom(lbl, 2, 0);
-        lv_obj_set_style_radius(lbl, 4, 0);
+        lv_obj_add_style(lbl, &log_label_style, 0);
         if (damage_log[idx].event_type == LOG_EVT_COUNTER) {
             const counter_definition_t *definition = get_counter_definition((counter_type_t)damage_log[idx].source);
             lv_obj_set_style_text_color(lbl,
@@ -221,11 +245,17 @@ static void refresh_damage_log_ui(void)
             lv_obj_set_style_text_color(lbl,
                 damage_log[idx].delta > 0 ? lv_color_hex(0x4CAF50) : lv_color_hex(0xFF5252), 0);
         }
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
     }
 
-    if (damage_log_selected >= damage_log_count) {
-        damage_log_selected = damage_log_count - 1;
+    if (page_label != NULL) {
+        if (damage_log_count > LOG_PAGE_SIZE) {
+            char page_buf[24];
+            snprintf(page_buf, sizeof(page_buf), "%d-%d of %d", first + 1, last, damage_log_count);
+            lv_label_set_text(page_label, page_buf);
+            lv_obj_clear_flag(page_label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(page_label, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     lv_obj_scroll_to_y(damage_log_container, 0, LV_ANIM_OFF);
@@ -268,6 +298,21 @@ void build_damage_log_screen(void)
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 24);
+
+    page_label = lv_label_create(screen_damage_log);
+    lv_label_set_text(page_label, "");
+    lv_obj_set_style_text_color(page_label, lv_color_hex(0x7A7A7A), 0);
+    lv_obj_set_style_text_font(page_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(page_label, LV_ALIGN_TOP_MID, 0, 54);
+    lv_obj_add_flag(page_label, LV_OBJ_FLAG_HIDDEN);
+
+    lv_style_init(&log_label_style);
+    lv_style_set_pad_left(&log_label_style, 4);
+    lv_style_set_pad_right(&log_label_style, 4);
+    lv_style_set_pad_top(&log_label_style, 2);
+    lv_style_set_pad_bottom(&log_label_style, 2);
+    lv_style_set_radius(&log_label_style, 4);
+    lv_style_set_text_font(&log_label_style, &lv_font_montserrat_14);
 
     damage_log_container = lv_obj_create(screen_damage_log);
     lv_obj_remove_style_all(damage_log_container);

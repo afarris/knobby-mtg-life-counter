@@ -107,9 +107,14 @@ int main(int argc, char *argv[])
 {
     extern float sim_battery_voltage;
     int i;
+    int do_random_log = 0;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--battery-voltage") == 0 && i + 1 < argc) {
             sim_battery_voltage = (float)atof(argv[++i]);
+        } else if (strcmp(argv[i], "--random-log") == 0) {
+            do_random_log = 1;
+        } else {
+            fprintf(stderr, "GUI sim: ignoring unsupported option %s\n", argv[i]);
         }
     }
 
@@ -150,6 +155,7 @@ int main(int argc, char *argv[])
 
     // Set some defaults if needed
     nvs_set_players_to_track(4);
+    if (do_random_log) sim_populate_random_log();
     back_to_main();
 
     last_tick = SDL_GetTicks();

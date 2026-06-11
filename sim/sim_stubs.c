@@ -232,3 +232,28 @@ void scr_display_on(void) { /* no-op in simulator */ }
 /* ---- Random ---- */
 
 uint32_t esp_random(void) { return (uint32_t)rand(); }
+
+/* ---- Shared test fixtures ---- */
+
+/* Populate the event log with random entries (shared by the headless
+   and SDL mains so --random-log behaves the same in both). */
+#include "damage_log.h"
+#include "game.h"
+
+void sim_populate_random_log(void)
+{
+    int i;
+    const uint8_t event_types[] = {LOG_EVT_LIFE, LOG_EVT_CMD_DAMAGE, LOG_EVT_COUNTER};
+    /* > LOG_PAGE_SIZE (32) so screenshots exercise the paginated render */
+    for (i = 0; i < 40; i++) {
+        int player = rand() % 4;
+        int delta = (rand() % 20) - 10;
+        uint8_t evt = event_types[rand() % 3];
+        int source = -1;
+        if (delta == 0) delta = 1;
+        if (evt == LOG_EVT_CMD_DAMAGE) source = (player + 1) % 4;
+        else if (evt == LOG_EVT_COUNTER) { source = rand() % COUNTER_TYPE_COUNT; if (delta < 0) delta = -delta; }
+        sim_tick_advance(5000 + (uint32_t)(rand() % 30000));
+        damage_log_add(player, delta, evt, source);
+    }
+}
