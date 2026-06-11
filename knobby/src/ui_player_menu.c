@@ -333,7 +333,7 @@ void build_counter_menu_screen(void) {
       event_counter_poison,
       event_counter_experience,
   };
-  quad_item_t items[4];
+  quad_item_t items[4] = {{0}};
 
   for (i = 0; i < 4; i++) {
     const counter_definition_t *def = get_counter_definition(types[i]);

@@ -324,16 +324,8 @@ static void handle_back_navigation(lv_obj_t *screen)
         lv_scr_load(previous_screen);
     } else if (screen == screen_tools_menu) {
         lv_scr_load(screen_quad_menu);
-    } else if (screen == screen_screen_settings_menu) {
-        settings_save();
-        lv_scr_load(screen_quad_menu);
-    } else if (screen == screen_settings_page2) {
-        lv_scr_load(screen_screen_settings_menu);
-    } else if (screen == screen_settings) {
-        settings_save();
-        lv_scr_load(screen_screen_settings_menu);
-    } else if (screen == screen_battery) {
-        lv_scr_load(screen_screen_settings_menu);
+    } else if (settings_handle_back(screen)) {
+        /* settings pages and their sub-screens (brightness, battery) */
     } else if (screen == screen_dice) {
         lv_scr_load(screen_tools_menu);
     } else if (screen == screen_damage_log) {

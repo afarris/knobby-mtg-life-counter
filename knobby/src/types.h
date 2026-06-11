@@ -69,6 +69,7 @@ typedef struct {
     lv_event_code_t event;
     const char *icon;
     const lv_font_t *icon_font;
+    void *user_data;            /* passed to cb via lv_event_get_user_data */
 } quad_item_t;
 
 // ---------- utility functions ----------

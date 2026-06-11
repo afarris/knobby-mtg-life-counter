@@ -115,10 +115,9 @@ static void nav_4p(void)         { nvs_set_players_to_track(4); reset_all_values
 static void nav_intro(void)      { lv_scr_load(screen_intro); }
 static void nav_menu(void)       { open_quad_menu(); }
 static void nav_tools(void)      { lv_scr_load(screen_tools_menu); }
-static void nav_settings_menu(void) { lv_scr_load(screen_screen_settings_menu); }
-static void nav_settings_more(void) { lv_scr_load(screen_settings_page2); }
+static void nav_settings_menu(void) { lv_scr_load(settings_pages[0]); }
 static void nav_brightness(void) { open_settings_screen(); }
-static void nav_battery(void)    { update_battery_measurement(true); refresh_battery_ui(); lv_scr_load(screen_battery); }
+static void nav_battery(void)    { open_battery_screen(); }
 static void nav_dice(void)       { open_dice_screen(); }
 static void nav_damage_log(void) { open_damage_log_screen(); }
 static void nav_game_mode(void)  { open_game_mode_menu(); }
@@ -160,7 +159,6 @@ static const screen_entry_t all_screens[] = {
     {"menu",          nav_menu},
     {"tools",         nav_tools},
     {"settings-menu", nav_settings_menu},
-    {"settings-more", nav_settings_more},
     {"brightness",    nav_brightness},
     {"battery",       nav_battery},
     {"dice",          nav_dice},
@@ -179,6 +177,33 @@ static const screen_entry_t all_screens[] = {
     {"mana",          nav_mana},
     {NULL, NULL}
 };
+
+/* Settings screens resolved dynamically from the declarative table:
+   "settings-page<N>" (1-based) and "setting:<id>" (page hosting that item).
+   Returns 1 if it navigated, 0 if the name is not a settings form. */
+static int nav_dynamic_settings(const char *name)
+{
+    if (strncmp(name, "settings-page", 13) == 0) {
+        int p = atoi(name + 13);
+        if (p < 1 || p > settings_page_count) {
+            fprintf(stderr, "Settings page out of range: %s (pages: 1-%d)\n",
+                    name, settings_page_count);
+            exit(1);
+        }
+        lv_scr_load(settings_pages[p - 1]);
+        return 1;
+    }
+    if (strncmp(name, "setting:", 8) == 0) {
+        int p = settings_item_page(name + 8);
+        if (p < 0) {
+            fprintf(stderr, "Unknown setting id: %s\n", name + 8);
+            exit(1);
+        }
+        lv_scr_load(settings_pages[p]);
+        return 1;
+    }
+    return 0;
+}
 
 /* ---- Usage ---- */
 static void print_usage(void)
@@ -229,10 +254,14 @@ static void print_usage(void)
            "  --turn-elapsed <ms>    Elapsed game time in milliseconds\n"
            "\n  --help, -h             Show this message\n"
            "\nAvailable screens:\n"
-           "  main 1p 2p 3p 4p intro menu tools settings-menu settings-more\n"
+           "  main 1p 2p 3p 4p intro menu tools settings-menu\n"
+           "  settings-page<N>       Settings page N (1-based)\n"
+           "  setting:<id>           Page hosting a setting (e.g. setting:autodim)\n"
            "  brightness battery dice damage-log game-mode custom-life select\n"
            "  damage player-menu rename all-damage counters-menu counter-edit\n"
-           "  color-menu color-picker mana\n");
+           "  color-menu color-picker mana\n"
+           "\nIntrospection:\n"
+           "  --print-settings-pages Print the number of settings pages and exit\n");
 }
 
 /* ---- CSV helpers ---- */
@@ -339,9 +368,13 @@ int main(int argc, char *argv[])
 
     srand((unsigned int)time(NULL));
 
+    int print_settings_pages = 0;
+
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--screen") == 0 && i + 1 < argc) {
             screen_name = argv[++i];
+        } else if (strcmp(argv[i], "--print-settings-pages") == 0) {
+            print_settings_pages = 1;
         } else if (strcmp(argv[i], "--life") == 0 && i + 1 < argc) {
             parse_csv_ints(argv[++i], life_values, MAX_DISPLAY_PLAYERS);
             life_set = 1;
@@ -449,6 +482,11 @@ int main(int argc, char *argv[])
 
     knob_gui();
 
+    if (print_settings_pages) {
+        printf("%d\n", settings_page_count);
+        return 0;
+    }
+
     /* Apply RAM-only overrides after navigation */
     #define APPLY_RAM_OVERRIDES() do { \
         if (life_set) { \
@@ -544,20 +582,16 @@ int main(int argc, char *argv[])
 
     {
         const screen_entry_t *entry;
-        int found = 0;
-        for (entry = all_screens; entry->name != NULL; entry++) {
-            if (strcmp(entry->name, screen_name) == 0) {
-                char path[512];
-                entry->navigate();
-                APPLY_RAM_OVERRIDES();
-                render_frame();
-                if (output_filename)
-                    snprintf(path, sizeof(path), "%s/%s", outdir, output_filename);
-                else
-                    snprintf(path, sizeof(path), "%s/%s.png", outdir, screen_name);
-                save_screenshot_png(path);
-                found = 1;
-                break;
+        char path[512];
+        int found = nav_dynamic_settings(screen_name);
+
+        if (!found) {
+            for (entry = all_screens; entry->name != NULL; entry++) {
+                if (strcmp(entry->name, screen_name) == 0) {
+                    entry->navigate();
+                    found = 1;
+                    break;
+                }
             }
         }
         if (!found) {
@@ -565,6 +599,13 @@ int main(int argc, char *argv[])
             print_usage();
             return 1;
         }
+        APPLY_RAM_OVERRIDES();
+        render_frame();
+        if (output_filename)
+            snprintf(path, sizeof(path), "%s/%s", outdir, output_filename);
+        else
+            snprintf(path, sizeof(path), "%s/%s.png", outdir, screen_name);
+        save_screenshot_png(path);
     }
 
     return 0;

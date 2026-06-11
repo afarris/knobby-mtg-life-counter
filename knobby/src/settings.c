@@ -1,6 +1,7 @@
 #include "settings.h"
 #include "hw.h"
 #include "storage.h"
+#include <string.h>
 #include "dice.h"
 #include "timer.h"
 #include "game_mode.h"
@@ -16,22 +17,10 @@ extern void back_to_main(void);
 // ---------- screens ----------
 lv_obj_t *screen_quad_menu = NULL;
 lv_obj_t *screen_tools_menu = NULL;
-lv_obj_t *screen_screen_settings_menu = NULL;
-lv_obj_t *screen_settings_page2 = NULL;
 lv_obj_t *screen_settings = NULL;
 lv_obj_t *screen_battery = NULL;
 
 // ---------- widgets ----------
-static lv_obj_t *btn_autodim = NULL;
-static lv_obj_t *label_autodim_quad = NULL;
-static lv_obj_t *btn_color_mode = NULL;
-static lv_obj_t *label_color_mode_quad = NULL;
-static lv_obj_t *btn_deselect = NULL;
-static lv_obj_t *label_deselect_quad = NULL;
-static lv_obj_t *btn_orientation = NULL;
-static lv_obj_t *label_orientation_quad = NULL;
-static lv_obj_t *btn_auto_eliminate = NULL;
-static lv_obj_t *label_auto_eliminate_quad = NULL;
 static lv_obj_t *arc_brightness = NULL;
 static lv_obj_t *label_settings_value = NULL;
 static lv_obj_t *label_settings_hint = NULL;
@@ -66,7 +55,7 @@ void build_quad_screen(lv_obj_t **screen, quad_item_t items[4])
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
 
         if (items[i].cb != NULL && items[i].enabled) {
-            lv_obj_add_event_cb(btn, items[i].cb, items[i].event, NULL);
+            lv_obj_add_event_cb(btn, items[i].cb, items[i].event, items[i].user_data);
             lv_obj_set_style_bg_color(btn, lv_color_hex(0x1A1A2E), 0);
         } else {
             lv_obj_set_style_bg_color(btn, lv_color_hex(0x111111), 0);
@@ -198,13 +187,7 @@ static uint32_t deselect_color(int index)
 static void event_quad_screen_settings(lv_event_t *e)
 {
     (void)e;
-    lv_scr_load(screen_screen_settings_menu);
-}
-
-static void event_screen_brightness(lv_event_t *e)
-{
-    (void)e;
-    open_settings_screen();
+    lv_scr_load(settings_pages[0]);
 }
 
 static const char *autodim_label(int index)
@@ -217,39 +200,12 @@ static const char *autodim_label(int index)
     }
 }
 
-static void event_screen_autodim(lv_event_t *e)
-{
-    (void)e;
-    auto_dim_setting = (auto_dim_setting + 1) % AUTO_DIM_COUNT;
-    nvs_set_auto_dim(auto_dim_setting);
-    if (auto_dim_setting == AUTO_DIM_OFF && dimmed) {
-        dimmed = false;
-        brightness_apply();
-    }
-    if (label_autodim_quad) {
-        lv_label_set_text(label_autodim_quad, autodim_label(auto_dim_setting));
-    }
-    set_btn_color(btn_autodim, autodim_color(auto_dim_setting));
-}
-
 static const char *color_mode_label(int mode)
 {
     switch (mode) {
         case COLOR_MODE_LIFE:   return "Colors\nLife";
         default:                return "Colors\nPlayer";
     }
-}
-
-static void event_screen_color_mode(lv_event_t *e)
-{
-    int mode;
-    (void)e;
-    mode = (nvs_get_color_mode() + 1) % COLOR_MODE_COUNT;
-    nvs_set_color_mode(mode);
-    if (label_color_mode_quad) {
-        lv_label_set_text(label_color_mode_quad, color_mode_label(mode));
-    }
-    set_btn_color(btn_color_mode, color_mode_color(mode));
 }
 
 static const char *deselect_label(int index)
@@ -271,59 +227,168 @@ static const char *orientation_mode_label(int mode)
     }
 }
 
-static void event_screen_deselect(lv_event_t *e)
-{
-    int val;
-    (void)e;
-    val = (nvs_get_deselect_timeout() + 1) % DESELECT_COUNT;
-    nvs_set_deselect_timeout(val);
-    if (label_deselect_quad) {
-        lv_label_set_text(label_deselect_quad, deselect_label(val));
-    }
-    set_btn_color(btn_deselect, deselect_color(val));
-}
-
-static void event_screen_orientation(lv_event_t *e)
-{
-    int val;
-    (void)e;
-    val = (nvs_get_orientation() + 1) % ORIENTATION_MODE_COUNT;
-    nvs_set_orientation(val);
-    if (label_orientation_quad) {
-        lv_label_set_text(label_orientation_quad, orientation_mode_label(val));
-    }
-    set_btn_color(btn_orientation, orientation_color(val));
-}
-
 static const char *auto_eliminate_label(int val)
 {
     return val ? "Auto\nElimination\nON" : "Auto\nElimination\nOFF";
 }
 
-static void event_screen_auto_eliminate(lv_event_t *e)
+// ---------- declarative settings ----------
+/* Every user setting lives in this one table. Pages, "More" chaining,
+   back-navigation, and sim navigation are all derived from it: to add,
+   remove, or reorder a setting, edit only this table (plus its label,
+   color, and NVS functions). Label fns must return strings that
+   lv_label_set_text may copy — never switch the refresh to
+   lv_label_set_text_static. */
+
+static int autodim_get(void) { return auto_dim_setting; }
+static void autodim_set(int v)
 {
-    int val;
-    (void)e;
-    val = !nvs_get_auto_eliminate();
-    nvs_set_auto_eliminate(val);
-    if (label_auto_eliminate_quad) {
-        lv_label_set_text(label_auto_eliminate_quad, auto_eliminate_label(val));
+    auto_dim_setting = v;
+    nvs_set_auto_dim(v);
+    if (v == AUTO_DIM_OFF && dimmed) {
+        dimmed = false;
+        brightness_apply();
     }
-    set_btn_color(btn_auto_eliminate, val ? TOGGLE_ON : TOGGLE_OFF);
 }
 
-static void event_screen_more(lv_event_t *e)
+static uint32_t toggle_color(int val)
 {
-    (void)e;
-    lv_scr_load(screen_settings_page2);
+    return val ? TOGGLE_ON : TOGGLE_OFF;
 }
 
-static void event_screen_battery(lv_event_t *e)
+void open_battery_screen(void)
 {
-    (void)e;
     update_battery_measurement(true);
     refresh_battery_ui();
     lv_scr_load(screen_battery);
+}
+
+static const setting_item_t settings_items[] = {
+    { .id = "brightness",     .fixed_label = "Brightness", .navigate = open_settings_screen, .nav_screen = &screen_settings },
+    { .id = "autodim",        .label = autodim_label,          .color = autodim_color,     .get = autodim_get,              .set = autodim_set,              .count = AUTO_DIM_COUNT },
+    { .id = "battery",        .fixed_label = "Battery",    .navigate = open_battery_screen, .nav_screen = &screen_battery },
+    { .id = "color-mode",     .label = color_mode_label,       .color = color_mode_color,  .get = nvs_get_color_mode,       .set = nvs_set_color_mode,       .count = COLOR_MODE_COUNT },
+    { .id = "deselect",       .label = deselect_label,         .color = deselect_color,    .get = nvs_get_deselect_timeout, .set = nvs_set_deselect_timeout, .count = DESELECT_COUNT },
+    { .id = "orientation",    .label = orientation_mode_label, .color = orientation_color, .get = nvs_get_orientation,      .set = nvs_set_orientation,      .count = ORIENTATION_MODE_COUNT },
+    { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
+};
+#define SETTINGS_ITEM_COUNT ((int)(sizeof(settings_items) / sizeof(settings_items[0])))
+#define MAX_SETTINGS_PAGES  ((SETTINGS_ITEM_COUNT + 2) / 3)
+
+lv_obj_t *settings_pages[MAX_SETTINGS_PAGES];
+int settings_page_count = 0;
+static lv_obj_t *setting_btns[SETTINGS_ITEM_COUNT];
+static lv_obj_t *setting_lbls[SETTINGS_ITEM_COUNT];
+static int setting_page_of[SETTINGS_ITEM_COUNT];
+
+void refresh_settings_pages_ui(void)
+{
+    int i;
+    for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
+        const setting_item_t *it = &settings_items[i];
+        int v;
+        if (setting_btns[i] == NULL || it->get == NULL) continue;
+        v = it->get();
+        lv_label_set_text(setting_lbls[i], it->label(v));
+        set_btn_color(setting_btns[i], it->color ? it->color(v) : 0x1A1A2E);
+    }
+}
+
+static void event_setting_item(lv_event_t *e)
+{
+    const setting_item_t *it = lv_event_get_user_data(e);
+    if (it == NULL) return;
+    if (it->navigate != NULL) {
+        it->navigate();
+        return;
+    }
+    it->set((it->get() + 1) % it->count);
+    refresh_settings_pages_ui();
+}
+
+static void event_setting_more(lv_event_t *e)
+{
+    int page = (int)(intptr_t)lv_event_get_user_data(e);
+    if (page >= 0 && page < settings_page_count)
+        lv_scr_load(settings_pages[page]);
+}
+
+/* Chunk the flat item list into quad pages: 3 items + "More" per page,
+   except the last page which holds up to 4. */
+static void build_settings_pages(void)
+{
+    int idx = 0;
+    int page = 0;
+
+    while (idx < SETTINGS_ITEM_COUNT) {
+        int remaining = SETTINGS_ITEM_COUNT - idx;
+        int on_page = (remaining <= 4) ? remaining : 3;
+        int first = idx;
+        int s;
+        quad_item_t q[4];
+
+        memset(q, 0, sizeof(q));
+        for (s = 0; s < 4; s++) q[s].label = "";
+        for (s = 0; s < on_page; s++, idx++) {
+            const setting_item_t *it = &settings_items[idx];
+            q[s].label = (it->label != NULL) ? it->label(it->get()) : it->fixed_label;
+            q[s].cb = event_setting_item;
+            q[s].enabled = true;
+            q[s].event = (it->event != 0) ? it->event : LV_EVENT_CLICKED;
+            q[s].user_data = (void *)it;
+            setting_page_of[idx] = page;
+        }
+        if (remaining > 4) {
+            q[3].label = "More";
+            q[3].cb = event_setting_more;
+            q[3].enabled = true;
+            q[3].event = LV_EVENT_CLICKED;
+            q[3].user_data = (void *)(intptr_t)(page + 1);
+        }
+        build_quad_screen(&settings_pages[page], q);
+        for (s = 0; s < on_page; s++) {
+            setting_btns[first + s] = lv_obj_get_child(settings_pages[page], s);
+            setting_lbls[first + s] = lv_obj_get_child(setting_btns[first + s], 0);
+        }
+        page++;
+    }
+    settings_page_count = page;
+    refresh_settings_pages_ui();
+}
+
+bool settings_handle_back(lv_obj_t *screen)
+{
+    int i;
+
+    for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
+        if (settings_items[i].nav_screen != NULL && screen == *settings_items[i].nav_screen) {
+            if (screen == screen_settings) settings_save();
+            lv_scr_load(settings_pages[setting_page_of[i]]);
+            return true;
+        }
+    }
+    for (i = 0; i < settings_page_count; i++) {
+        if (screen == settings_pages[i]) {
+            if (i == 0) {
+                settings_save();
+                lv_scr_load(screen_quad_menu);
+            } else {
+                lv_scr_load(settings_pages[i - 1]);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+int settings_item_page(const char *id)
+{
+    int i;
+    for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
+        if (strcmp(settings_items[i].id, id) == 0)
+            return setting_page_of[i];
+    }
+    return -1;
 }
 
 static void event_quad_tools(lv_event_t *e)
@@ -372,41 +437,7 @@ void build_quad_menus(void)
     };
     build_quad_screen(&screen_tools_menu, tools_items);
 
-    quad_item_t screen_items[4] = {
-        {"Brightness", event_screen_brightness, true, LV_EVENT_CLICKED},
-        {autodim_label(auto_dim_setting), event_screen_autodim, true, LV_EVENT_CLICKED},
-        {"Battery",       event_screen_battery, true, LV_EVENT_CLICKED},
-        {"More",          event_screen_more, true, LV_EVENT_CLICKED},
-    };
-    build_quad_screen(&screen_screen_settings_menu, screen_items);
-
-    btn_autodim = lv_obj_get_child(screen_screen_settings_menu, 1);
-    label_autodim_quad = lv_obj_get_child(btn_autodim, 0);
-    set_btn_color(btn_autodim, autodim_color(auto_dim_setting));
-
-    quad_item_t page2_items[4] = {
-        {color_mode_label(nvs_get_color_mode()), event_screen_color_mode, true, LV_EVENT_CLICKED},
-        {deselect_label(nvs_get_deselect_timeout()), event_screen_deselect, true, LV_EVENT_CLICKED},
-        {orientation_mode_label(nvs_get_orientation()), event_screen_orientation, true, LV_EVENT_CLICKED},
-        {auto_eliminate_label(nvs_get_auto_eliminate()), event_screen_auto_eliminate, true, LV_EVENT_CLICKED},
-    };
-    build_quad_screen(&screen_settings_page2, page2_items);
-
-    btn_color_mode = lv_obj_get_child(screen_settings_page2, 0);
-    label_color_mode_quad = lv_obj_get_child(btn_color_mode, 0);
-    set_btn_color(btn_color_mode, color_mode_color(nvs_get_color_mode()));
-
-    btn_deselect = lv_obj_get_child(screen_settings_page2, 1);
-    label_deselect_quad = lv_obj_get_child(btn_deselect, 0);
-    set_btn_color(btn_deselect, deselect_color(nvs_get_deselect_timeout()));
-
-    btn_orientation = lv_obj_get_child(screen_settings_page2, 2);
-    label_orientation_quad = lv_obj_get_child(btn_orientation, 0);
-    set_btn_color(btn_orientation, orientation_color(nvs_get_orientation()));
-
-    btn_auto_eliminate = lv_obj_get_child(screen_settings_page2, 3);
-    label_auto_eliminate_quad = lv_obj_get_child(btn_auto_eliminate, 0);
-    set_btn_color(btn_auto_eliminate, nvs_get_auto_eliminate() ? TOGGLE_ON : TOGGLE_OFF);
+    build_settings_pages();
 }
 
 void build_settings_screen(void)
