@@ -106,7 +106,10 @@ void check_player_elimination(int player)
     bool was_eliminated = player_eliminated[player];
     bool now_eliminated = false;
 
-    if (nvs_get_auto_eliminate()) {
+    /* Elimination is a multiplayer concept: with a single tracked player
+       there is no eliminated-menu route in the 1p UI, so eliminating
+       player 0 would brick the counter until reset. */
+    if (nvs_get_auto_eliminate() && nvs_get_players_to_track() > 1) {
         if (player_life[player] <= 0) {
             now_eliminated = true;
         } else {
@@ -142,6 +145,8 @@ void manual_eliminate_player(int player)
 {
     if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
     if (player_eliminated[player]) return;
+    /* Same solo-mode exemption as check_player_elimination. */
+    if (nvs_get_players_to_track() <= 1) return;
     player_eliminated[player] = true;
     clear_player_elimination_action(player);
     if (player_selected[player]) {
