@@ -426,6 +426,22 @@ void selection_set_single(int player)
     player_selected[player] = true;
 }
 
+/* The single entry point for committing a life change as a game event:
+   log + clamp + elimination-undo action + elimination check. Any path
+   that applies life deltas (knob commit, All Damage) must use this so
+   the elimination machinery can't be bypassed. */
+void apply_life_delta(int player, int delta)
+{
+    if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
+    if (player_eliminated[player]) return;
+    damage_log_add(player, delta, LOG_EVT_LIFE, -1);
+    player_life[player] = clamp_life(player_life[player] + delta);
+    if (player_life[player] <= 0) {
+        set_player_elimination_action(player, LOG_EVT_LIFE, -1, delta);
+    }
+    check_player_elimination(player);
+}
+
 // ---------- life preview ----------
 void life_preview_commit_cb(lv_timer_t *timer)
 {
@@ -444,13 +460,8 @@ void life_preview_commit_cb(lv_timer_t *timer)
     }
 
     for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
-        if (!player_selected[i] || player_eliminated[i]) continue;
-        damage_log_add(i, pending_life_delta, LOG_EVT_LIFE, -1);
-        player_life[i] = clamp_life(player_life[i] + pending_life_delta);
-        if (player_life[i] <= 0) {
-            set_player_elimination_action(i, LOG_EVT_LIFE, -1, pending_life_delta);
-        }
-        check_player_elimination(i);
+        if (!player_selected[i]) continue;
+        apply_life_delta(i, pending_life_delta);
     }
     pending_life_delta = 0;
     life_preview_active = false;

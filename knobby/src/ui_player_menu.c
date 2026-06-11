@@ -181,8 +181,7 @@ static void event_all_damage_apply(lv_event_t *e) {
     if (i == menu_player && !include_myself) {
       continue;
     }
-    damage_log_add(i, -all_damage_value, LOG_EVT_LIFE, -1);
-    player_life[i] = clamp_life(player_life[i] - all_damage_value);
+    apply_life_delta(i, -all_damage_value);
   }
 
   refresh_player_ui();
