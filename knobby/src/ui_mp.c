@@ -413,17 +413,17 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
         text_color = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
     }
 
-    if (panel != NULL) {
-        lv_obj_set_style_bg_color(panel, bg_color, 0);
-        lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
-    }
-
     if (player_eliminated[i]) {
         bg_color = lv_color_hex(0x404040);
         text_color = lv_color_hex(0x808080);
-        if (panel != NULL) {
-            lv_obj_set_style_bg_color(panel, bg_color, 0);
-        }
+    }
+
+    /* Only write the color when it actually changed: every style write
+       invalidates the whole panel, which on full-screen wedge panels means
+       a full-screen redraw. (bg_opa is set once at build time.) */
+    if (panel != NULL &&
+        lv_obj_get_style_bg_color(panel, LV_PART_MAIN).full != bg_color.full) {
+        lv_obj_set_style_bg_color(panel, bg_color, 0);
     }
 
     if (life_lbl != NULL) {
