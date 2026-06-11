@@ -14,6 +14,7 @@ static int cached_num_players = 4;
 static int cached_players_to_track = 1;
 static int cached_life_total = DEFAULT_LIFE_TOTAL;
 static int cached_auto_eliminate = 1; /* 1=ON (default), 0=OFF */
+static int cached_random_first = 1; /* 1=ON (default): random first-player pick on reset */
 static char cached_name_list[NAME_LIST_COUNT][NAME_LIST_LEN];
 
 // ---------- init ----------
@@ -59,6 +60,10 @@ void knob_nvs_init(void)
         int8_t ae_val = 1;
         nvs_get_i8(handle, "auto_elim", &ae_val);
         cached_auto_eliminate = (ae_val != 0) ? 1 : 0;
+
+        int8_t rf_val = 1;
+        nvs_get_i8(handle, "rand_first", &rf_val);
+        cached_random_first = (rf_val != 0) ? 1 : 0;
 
         size_t nl_size = sizeof(cached_name_list);
         nvs_get_blob(handle, "name_list", cached_name_list, &nl_size);
@@ -174,6 +179,18 @@ void nvs_set_auto_eliminate(int value)
     settings_dirty = true;
 }
 
+// ---------- random first-player pick ----------
+int nvs_get_random_first(void)
+{
+    return cached_random_first;
+}
+
+void nvs_set_random_first(int value)
+{
+    cached_random_first = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
 // ---------- name list ----------
 void nvs_get_name_list(char (*out)[NAME_LIST_LEN])
 {
@@ -201,6 +218,7 @@ void settings_save(void)
         nvs_set_i8(handle, "track", (int8_t)cached_players_to_track);
         nvs_set_i16(handle, "life_total", (int16_t)cached_life_total);
         nvs_set_i8(handle, "auto_elim", (int8_t)cached_auto_eliminate);
+        nvs_set_i8(handle, "rand_first", (int8_t)cached_random_first);
         nvs_set_blob(handle, "name_list", cached_name_list, sizeof(cached_name_list));
         nvs_commit(handle);
         nvs_close(handle);

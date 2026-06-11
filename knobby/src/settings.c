@@ -263,6 +263,11 @@ void open_battery_screen(void)
     lv_scr_load(screen_battery);
 }
 
+static const char *random_first_label(int val)
+{
+    return val ? "Random\nFirst\nON" : "Random\nFirst\nOFF";
+}
+
 static const setting_item_t settings_items[] = {
     { .id = "brightness",     .fixed_label = "Brightness", .navigate = open_settings_screen, .nav_screen = &screen_settings },
     { .id = "autodim",        .label = autodim_label,          .color = autodim_color,     .get = autodim_get,              .set = autodim_set,              .count = AUTO_DIM_COUNT },
@@ -271,6 +276,7 @@ static const setting_item_t settings_items[] = {
     { .id = "deselect",       .label = deselect_label,         .color = deselect_color,    .get = nvs_get_deselect_timeout, .set = nvs_set_deselect_timeout, .count = DESELECT_COUNT },
     { .id = "orientation",    .label = orientation_mode_label, .color = orientation_color, .get = nvs_get_orientation,      .set = nvs_set_orientation,      .count = ORIENTATION_MODE_COUNT },
     { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
+    { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
 };
 #define SETTINGS_ITEM_COUNT ((int)(sizeof(settings_items) / sizeof(settings_items[0])))
 #define MAX_SETTINGS_PAGES  ((SETTINGS_ITEM_COUNT + 2) / 3)

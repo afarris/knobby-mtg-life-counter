@@ -233,6 +233,7 @@ static void print_usage(void)
            "  --auto-dim <n>         0=OFF, 1=15s, 2=30s, 3=60s (default: 0)\n"
            "  --deselect <n>         0=never, 1=5s, 2=15s, 3=30s (default: 0)\n"
            "  --auto-eliminate <n>   0=OFF, 1=ON (default: 1)\n"
+           "  --random-first <n>     0=OFF, 1=ON random first-player pick on reset (default: 1)\n"
            "\nSpecial state:\n"
            "  --dice <n>             Set dice roll result (1-20)\n"
            "  --counter-type <n>     Counter type for counter-edit: 0=cmd tax, 1=partner tax,\n"
@@ -390,6 +391,8 @@ int main(int argc, char *argv[])
         } else if (strcmp(argv[i], "--selected") == 0 && i + 1 < argc) {
             selected_val = atoi(argv[++i]);
             selected_set = 1;
+        } else if (strcmp(argv[i], "--random-first") == 0 && i + 1 < argc) {
+            sim_nvs_preset_i8("rand_first", (int8_t)atoi(argv[++i]));
         } else if (strcmp(argv[i], "--preview-delta") == 0 && i + 1 < argc) {
             preview_delta = atoi(argv[++i]);
             preview_delta_set = 1;

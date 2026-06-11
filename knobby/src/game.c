@@ -652,6 +652,7 @@ void start_player_selection_animation(void)
     int random_stops;
 
     if (track <= 1) return;
+    if (!nvs_get_random_first()) return;
 
     if (player_select_anim_timer == NULL) {
         player_select_anim_timer = lv_timer_create(player_select_anim_cb, 50, NULL);

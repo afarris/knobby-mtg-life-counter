@@ -250,6 +250,11 @@ for ae in 0 1; do
     shot "setting_autoelim_${ae_name[$ae]}.png" --screen setting:auto-eliminate --auto-eliminate "$ae"
 done
 
+for rf in 0 1; do
+    rf_name=("off" "on")
+    shot "setting_randomfirst_${rf_name[$rf]}.png" --screen setting:random-first --random-first "$rf"
+done
+
 # All settings pages in their default state (count derived from the sim)
 NPAGES=$($SIM --print-settings-pages)
 for p in $(seq 1 "$NPAGES"); do
