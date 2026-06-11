@@ -268,6 +268,21 @@ static const char *random_first_label(int val)
     return val ? "Random\nFirst\nON" : "Random\nFirst\nOFF";
 }
 
+static const char *multi_select_label(int val)
+{
+    return val ? "Multi-\nSelect\nON" : "Multi-\nSelect\nOFF";
+}
+
+static void multi_select_set(int v)
+{
+    nvs_set_multi_select(v);
+    if (v == 0) {
+        /* Turning multi-select off: drop any lingering multi-selection so the
+           single-select rules apply cleanly on return to the life screen. */
+        selection_clear();
+    }
+}
+
 static const setting_item_t settings_items[] = {
     { .id = "brightness",     .fixed_label = "Brightness", .navigate = open_settings_screen, .nav_screen = &screen_settings },
     { .id = "autodim",        .label = autodim_label,          .color = autodim_color,     .get = autodim_get,              .set = autodim_set,              .count = AUTO_DIM_COUNT },
@@ -277,6 +292,7 @@ static const setting_item_t settings_items[] = {
     { .id = "orientation",    .label = orientation_mode_label, .color = orientation_color, .get = nvs_get_orientation,      .set = nvs_set_orientation,      .count = ORIENTATION_MODE_COUNT },
     { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
     { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
+    { .id = "multi-select",   .label = multi_select_label,     .color = toggle_color,      .get = nvs_get_multi_select,     .set = multi_select_set,         .count = 2 },
 };
 #define SETTINGS_ITEM_COUNT ((int)(sizeof(settings_items) / sizeof(settings_items[0])))
 #define MAX_SETTINGS_PAGES  ((SETTINGS_ITEM_COUNT + 2) / 3)

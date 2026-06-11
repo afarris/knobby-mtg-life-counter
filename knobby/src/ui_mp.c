@@ -312,14 +312,14 @@ static void refresh_counter_rows(lv_obj_t *panel, lv_obj_t **rows, lv_obj_t **va
 static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t *name_lbl, int i, int color_i)
 {
     char buf[8];
-    bool preview_here = life_preview_active && (preview_player == i);
-    bool selected = (i == selected_player);
+    bool selected = is_player_selected(i);
+    bool preview_here = life_preview_active && selected;
     lv_color_t bg_color;
     lv_color_t text_color;
 
     {
         int vib;
-        if (selected_player < 0) vib = LIFE_VIB_MID;
+        if (selection_count() == 0) vib = LIFE_VIB_MID;
         else vib = selected ? LIFE_VIB_VIV : LIFE_VIB_DIM;
         bg_color = get_effective_player_color(i, color_i, vib);
         text_color = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
@@ -433,21 +433,44 @@ void refresh_multiplayer_ui(void)
 static void event_multiplayer_select(lv_event_t *e)
 {
     int player = (int)(intptr_t)lv_event_get_user_data(e);
+    bool had_pending;
+    bool was_selected;
 
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
     if (player_eliminated[player]) return;
 
-    if (life_preview_active && preview_player != player) {
+    /* Capture state before committing: the commit clears the selection in
+       multi-select mode, so we can't read it afterwards. */
+    had_pending = life_preview_active;
+    was_selected = is_player_selected(player);
+
+    /* Apply any pending delta to the current set before the selection
+       changes. */
+    if (life_preview_active) {
         life_preview_commit_cb(NULL);
     }
 
-    if (selected_player == player) {
-        if (life_preview_active && preview_player == player) {
-            life_preview_commit_cb(NULL);
+    if (nvs_get_multi_select()) {
+        if (had_pending) {
+            /* A pending change was just applied (and the set cleared).
+               Tapping a player that was part of the set ends the operation
+               with nothing selected; tapping a different player starts a
+               fresh selection with just that player. */
+            if (!was_selected) {
+                selection_set_single(player);
+            }
+        } else {
+            /* No pending change: tap toggles this player in/out of the set. */
+            selection_toggle(player);
         }
-        selected_player = -1;
     } else {
-        selected_player = player;
+        /* Single-select (default): tapping the only selected player deselects;
+           tapping any other player switches the selection to it. */
+        if (was_selected && selection_count() == 1) {
+            selection_clear();
+        } else {
+            selection_set_single(player);
+        }
     }
     select_kick_timer();
     refresh_multiplayer_ui();
@@ -461,8 +484,8 @@ static void event_multiplayer_open_menu(lv_event_t *e)
 
     /* A long-press is a deliberate gesture, so it always opens the
        pressed player's menu (e.g. to apply commander damage), even when
-       another player is selected for life changes; the selection is left
-       untouched. */
+       one or more players are selected for life changes; the selection
+       is left untouched. */
     if (player_eliminated[player]) {
         menu_player = player;
         load_screen_if_needed(screen_eliminated_player_menu);
@@ -482,7 +505,7 @@ static void event_multiplayer_open_menu(lv_event_t *e)
 static void select_timeout_cb(lv_timer_t *timer)
 {
     (void)timer;
-    selected_player = -1;
+    selection_clear();
     if (select_timeout_timer != NULL)
         lv_timer_pause(select_timeout_timer);
     refresh_multiplayer_ui();
@@ -497,7 +520,7 @@ void select_kick_timer(void)
         select_timeout_timer = lv_timer_create(select_timeout_cb, 15000, NULL);
         lv_timer_pause(select_timeout_timer);
     }
-    if (selected_player >= 0 && ms > 0) {
+    if (selection_count() > 0 && ms > 0) {
         lv_timer_set_period(select_timeout_timer, (uint32_t)ms);
         lv_timer_reset(select_timeout_timer);
         lv_timer_resume(select_timeout_timer);

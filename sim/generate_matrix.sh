@@ -3,7 +3,7 @@
 # Run from the sim/ directory: ./generate_matrix.sh
 set -e
 
-SIM=./knobby_sim
+SIM="${SIM:-./knobby_sim}"
 OUT=screenshots
 COUNT=0
 FILES=()
@@ -121,6 +121,19 @@ for track in 2 3 4; do
             --selected "$player"
     done
 done
+
+# ============================================================
+# 5b. Multi-select — multiple players selected together (knob hits all)
+# ============================================================
+shot "multiselect_2p_01.png"  --screen 2p --track 2 --multi-select 1 --selected-players 0,1
+shot "multiselect_3p_02.png"  --screen 3p --track 3 --multi-select 1 --selected-players 0,2
+shot "multiselect_4p_02.png"  --screen 4p --track 4 --multi-select 1 --selected-players 0,2
+shot "multiselect_4p_013.png" --screen 4p --track 4 --multi-select 1 --selected-players 0,1,3
+# Shared-delta preview across the selected set (damage and heal)
+shot "multiselect_4p_preview_neg.png" --screen 4p --track 4 --multi-select 1 \
+    --selected-players 0,1,2 --preview-delta -3 --life 20,30,40,15
+shot "multiselect_3p_preview_pos.png" --screen 3p --track 3 --multi-select 1 \
+    --selected-players 0,1,2 --preview-delta 5 --life 20,30,40
 
 # ============================================================
 # 6. Random counters — multiplayer × orientations + 1p
@@ -245,6 +258,7 @@ for rot in 0 1 2; do
     shot "setting_orientation_${rot_name[$rot]}.png" --screen setting:orientation --orientation "$rot"
 done
 
+# Settings page 3 (gameplay toggles: auto-eliminate + multi-select)
 for ae in 0 1; do
     ae_name=("off" "on")
     shot "setting_autoelim_${ae_name[$ae]}.png" --screen setting:auto-eliminate --auto-eliminate "$ae"
@@ -253,6 +267,11 @@ done
 for rf in 0 1; do
     rf_name=("off" "on")
     shot "setting_randomfirst_${rf_name[$rf]}.png" --screen setting:random-first --random-first "$rf"
+done
+
+for ms in 0 1; do
+    ms_name=("off" "on")
+    shot "setting_multiselect_${ms_name[$ms]}.png" --screen setting:multi-select --multi-select "$ms"
 done
 
 # All settings pages in their default state (count derived from the sim)
@@ -383,7 +402,7 @@ write_section() {
 
 # Sort files into sections
 SEC_1P_PREV=(); SEC_2P_PREV=(); SEC_3P_PREV=(); SEC_4P_PREV=()
-SEC_LIFE=(); SEC_LIFECOLOR=(); SEC_PERPLAYER=(); SEC_SELECTED=(); SEC_COUNTERS=()
+SEC_LIFE=(); SEC_LIFECOLOR=(); SEC_PERPLAYER=(); SEC_SELECTED=(); SEC_MULTISEL=(); SEC_COUNTERS=()
 SEC_BRIGHT=(); SEC_COUNTER_EDIT=(); SEC_DAMAGE=(); SEC_SETTINGS=()
 SEC_TIMER=()
 SEC_MANA=()
@@ -392,6 +411,7 @@ SEC_OTHER=()
 
 for f in "${FILES[@]}"; do
     case "$f" in
+        multiselect_*)        SEC_MULTISEL+=("$f") ;;
         lowbatt_*)            SEC_LOWBATT+=("$f") ;;
         1p_preview_*)         SEC_1P_PREV+=("$f") ;;
         2p_*_preview_*)       SEC_2P_PREV+=("$f") ;;
@@ -421,6 +441,7 @@ write_section "Life Totals (Player Colors)" "${SEC_LIFE[@]}"
 write_section "Life Totals (Life Colors)" "${SEC_LIFECOLOR[@]}"
 write_section "Life Totals (Per-Player Colors)" "${SEC_PERPLAYER[@]}"
 write_section "Selected Player" "${SEC_SELECTED[@]}"
+write_section "Multi-Select" "${SEC_MULTISEL[@]}"
 write_section "Player Counters" "${SEC_COUNTERS[@]}"
 write_section "Brightness" "${SEC_BRIGHT[@]}"
 write_section "Counter Edit" "${SEC_COUNTER_EDIT[@]}"

@@ -221,6 +221,7 @@ static void print_usage(void)
            "  --track <n>            Players shown on screen, 1-4 (default: 4)\n"
            "  --starting-life <n>    Starting/max life total (default: 40)\n"
            "  --selected <n>         Which player is selected, -1=none (default: -1)\n"
+           "  --selected-players <csv> Players selected together, e.g. 0,2 (multi-select set)\n"
            "\nLife preview (shows pending delta before commit):\n"
            "  --preview-delta <n>    Pending life change to display (e.g. +12, -5)\n"
            "  --preview-player <n>   Which player shows the preview, -1=1p mode (default: -1)\n"
@@ -234,6 +235,7 @@ static void print_usage(void)
            "  --deselect <n>         0=never, 1=5s, 2=15s, 3=30s (default: 0)\n"
            "  --auto-eliminate <n>   0=OFF, 1=ON (default: 1)\n"
            "  --random-first <n>     0=OFF, 1=ON random first-player pick on reset (default: 1)\n"
+           "  --multi-select <n>     0=OFF, 1=ON (default: 0)\n"
            "\nSpecial state:\n"
            "  --dice <n>             Set dice roll result (1-20)\n"
            "  --counter-type <n>     Counter type for counter-edit: 0=cmd tax, 1=partner tax,\n"
@@ -331,6 +333,8 @@ int main(int argc, char *argv[])
     int names_set = 0;
     int selected_val = -1;
     int selected_set = 0;
+    int selected_players_values[MAX_DISPLAY_PLAYERS] = {-1, -1, -1, -1};
+    int selected_players_set = 0;
     int preview_delta = 0;
     int preview_delta_set = 0;
     int arg_preview_player = -1;
@@ -393,6 +397,11 @@ int main(int argc, char *argv[])
             selected_set = 1;
         } else if (strcmp(argv[i], "--random-first") == 0 && i + 1 < argc) {
             sim_nvs_preset_i8("rand_first", (int8_t)atoi(argv[++i]));
+        } else if (strcmp(argv[i], "--selected-players") == 0 && i + 1 < argc) {
+            parse_csv_ints(argv[++i], selected_players_values, MAX_DISPLAY_PLAYERS);
+            selected_players_set = 1;
+        } else if (strcmp(argv[i], "--multi-select") == 0 && i + 1 < argc) {
+            sim_nvs_preset_i8("multi_sel", (int8_t)atoi(argv[++i]));
         } else if (strcmp(argv[i], "--preview-delta") == 0 && i + 1 < argc) {
             preview_delta = atoi(argv[++i]);
             preview_delta_set = 1;
@@ -502,14 +511,24 @@ int main(int argc, char *argv[])
                     snprintf(player_names[i], sizeof(player_names[i]), "%s", name_values[i]); \
             } \
         } \
-        if (selected_set) \
-            selected_player = selected_val; \
+        if (selected_players_set) { \
+            int j; \
+            selection_clear(); \
+            for (j = 0; j < MAX_DISPLAY_PLAYERS; j++) { \
+                int p = selected_players_values[j]; \
+                if (p >= 0 && p < MAX_DISPLAY_PLAYERS) \
+                    player_selected[p] = true; \
+            } \
+        } else if (selected_set) { \
+            selection_set_single(selected_val); \
+        } \
         if (preview_delta_set) { \
-            if (arg_preview_player < 0) arg_preview_player = 0; \
-            preview_player = arg_preview_player; \
+            if (!selected_players_set && !selected_set) { \
+                if (arg_preview_player < 0) arg_preview_player = 0; \
+                selection_set_single(arg_preview_player); \
+            } \
             pending_life_delta = preview_delta; \
             life_preview_active = true; \
-            selected_player = arg_preview_player; \
         } \
         if (brightness_set) { \
             brightness_percent = brightness_val; \
@@ -602,6 +621,13 @@ int main(int argc, char *argv[])
             print_usage();
             return 1;
         }
+        /* reset_all_values() (called by the nav_* helpers) kicks off the
+           "pick first player" roulette animation, whose timer would keep
+           reassigning the selection while render_frame() advances time.
+           Stop it and clear the resulting selection so screenshots are
+           deterministic; APPLY_RAM_OVERRIDES then sets any requested state. */
+        stop_player_selection_animation();
+        selection_clear();
         APPLY_RAM_OVERRIDES();
         render_frame();
         if (output_filename)

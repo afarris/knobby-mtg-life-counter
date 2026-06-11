@@ -449,7 +449,7 @@ static void handle_knob_event(knob_event_t k)
     }
     else if (lv_scr_act() == screen_1p)
     {
-        selected_player = 0;
+        selection_set_single(0);
         if (k == KNOB_LEFT)      change_player_life(-1);
         else if (k == KNOB_RIGHT) change_player_life(+1);
     }
