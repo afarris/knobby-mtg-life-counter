@@ -29,7 +29,72 @@ typedef struct {
     lv_coord_t nudge_x;     /* x offset for life/name labels in non-centric modes */
     int player_index;       /* which player this panel displays */
     int color_index;        /* color slot (differs from player only for 2p) */
+    /* Pie-slice panels: full-screen with an angular wedge mask. Angles use
+       the LVGL arc convention (0 = 3 o'clock, clockwise, degrees). Both 0
+       means a plain rectangular panel. All slice geometry — label anchors,
+       text rotation, counter arc, separators — derives from these angles
+       at layout-build time. */
+    int16_t wedge_start;
+    int16_t wedge_end;
 } mp_panel_spec_t;
+
+static bool spec_is_wedge(const mp_panel_spec_t *spec)
+{
+    return spec->wedge_start != spec->wedge_end;
+}
+
+/* ---------- wedge geometry, derived once per layout rebuild ----------
+   Everything that depends on the slice angles (label anchors, text
+   rotation, counter arc, separators) reads this cache, so the spec's
+   wedge_start/wedge_end stay the single source of truth and refresh/draw
+   paths do no trigonometry. */
+#define WEDGE_CX 180
+#define WEDGE_CY 180
+#define WEDGE_LABEL_RADIUS 88
+
+typedef struct {
+    int16_t bis_deg;                /* slice bisector angle */
+    lv_coord_t label_dx, label_dy;  /* label anchor offset from center */
+} wedge_geom_t;
+
+static wedge_geom_t wedge_geom[MULTIPLAYER_COUNT];
+static lv_point_t wedge_sep_ends[MULTIPLAYER_COUNT];
+static int wedge_sep_count = 0;
+
+/* Round an lv_trigo_sin/cos value (scaled 1<<15) projected to a radius */
+static lv_coord_t wedge_polar(int16_t trig, int radius)
+{
+    int32_t v = (int32_t)trig * radius;
+    return (lv_coord_t)((v + (v >= 0 ? 16384 : -16384)) / 32768);
+}
+
+static int16_t wedge_bisector_deg(const mp_panel_spec_t *spec)
+{
+    int delta = (spec->wedge_end >= spec->wedge_start)
+              ? spec->wedge_end - spec->wedge_start
+              : 360 - spec->wedge_start + spec->wedge_end;
+    return (int16_t)((spec->wedge_start + delta / 2) % 360);
+}
+
+static void wedge_compute_geometry(const mp_panel_spec_t *panels, int panel_count)
+{
+    int i;
+
+    wedge_sep_count = 0;
+    for (i = 0; i < panel_count && i < MULTIPLAYER_COUNT; i++) {
+        const mp_panel_spec_t *spec = &panels[i];
+        int16_t bis = wedge_bisector_deg(spec);
+
+        wedge_geom[i].bis_deg = bis;
+        wedge_geom[i].label_dx = wedge_polar(lv_trigo_cos(bis), WEDGE_LABEL_RADIUS);
+        wedge_geom[i].label_dy = wedge_polar(lv_trigo_sin(bis), WEDGE_LABEL_RADIUS);
+
+        /* One boundary per panel covers every separator exactly once */
+        wedge_sep_ends[i].x = WEDGE_CX + wedge_polar(lv_trigo_cos(spec->wedge_start), 180);
+        wedge_sep_ends[i].y = WEDGE_CY + wedge_polar(lv_trigo_sin(spec->wedge_start), 180);
+        wedge_sep_count++;
+    }
+}
 
 typedef struct {
     int panel_count;
@@ -151,8 +216,13 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
     *anchor_y = target_world_y - panel_center_y;
 }
 
-static int16_t get_counter_row_angle(int orientation_mode, lv_obj_t *panel, int16_t panel_angle)
+static int16_t get_counter_row_angle(int orientation_mode, const mp_panel_spec_t *spec,
+                                     lv_obj_t *panel, int16_t panel_angle)
 {
+    /* Wedge panels: counters follow the slice angle in every orientation,
+       matching the life/name labels */
+    if (spec_is_wedge(spec)) return panel_angle;
+
     if (orientation_mode == ORIENTATION_MODE_CENTRIC) {
         lv_obj_t *parent;
 
@@ -180,11 +250,10 @@ static int16_t get_2p_orientation_angle(int mode, int panel_index)
 
 static int16_t get_3p_orientation_angle(int mode, int panel_index)
 {
-    static const int16_t angled_rot[3] = {1350, 2250, 0};
-
     switch (mode) {
         case ORIENTATION_MODE_CENTRIC:
-            return angled_rot[panel_index];
+            /* Bisector minus 90 so text reads upright from each seat */
+            return (int16_t)(((wedge_geom[panel_index].bis_deg + 270) % 360) * 10);
         case ORIENTATION_MODE_TABLETOP:
             return (panel_index < 2) ? 1800 : 0;
         default:
@@ -213,11 +282,12 @@ static const mp_panel_spec_t panels_2p[] = {
     {0, 182, 360, 178, 0, 0, 1},
 };
 
-/* 3p: top-left = P2, top-right = P3, bottom = P1 */
+/* 3p: three equal 120-degree pie slices — top-left = P2, top-right = P3,
+   bottom = P1. Bisectors at 210/330/90 degrees. */
 static const mp_panel_spec_t panels_3p[] = {
-    {0,   0, 180, 180,  10, 1, 1},
-    {180, 0, 180, 180, -10, 2, 2},
-    {0, 180, 360, 180,   0, 0, 0},
+    {0, 0, 360, 360, 0, 1, 1, 150, 270},
+    {0, 0, 360, 360, 0, 2, 2, 270,  30},
+    {0, 0, 360, 360, 0, 0, 0,  30, 150},
 };
 
 /* 4p: quadrants in order P1, P2, P3, P4 */
@@ -257,7 +327,8 @@ static const mp_layout_spec_t *get_layout(int track)
 }
 
 /* ---------- per-panel refresh ---------- */
-static void refresh_counter_rows(lv_obj_t *panel, lv_obj_t **rows, lv_obj_t **value_labels,
+static void refresh_counter_rows(const mp_panel_spec_t *spec, int16_t wedge_bis,
+                                 lv_obj_t *panel, lv_obj_t **rows, lv_obj_t **value_labels,
                                  int player_index, lv_color_t text_color,
                                  int16_t panel_angle, int16_t row_angle)
 {
@@ -270,7 +341,9 @@ static void refresh_counter_rows(lv_obj_t *panel, lv_obj_t **rows, lv_obj_t **va
     lv_coord_t anchor_y = 0;
 
     (void)panel_angle;
-    get_counter_equator_anchor(panel, &anchor_x, &anchor_y);
+    if (!spec_is_wedge(spec)) {
+        get_counter_equator_anchor(panel, &anchor_x, &anchor_y);
+    }
 
     for (type = 0; type < COUNTER_TYPE_COUNT; type++) {
         if (rows[type] == NULL || value_labels[type] == NULL) continue;
@@ -289,8 +362,23 @@ static void refresh_counter_rows(lv_obj_t *panel, lv_obj_t **rows, lv_obj_t **va
         int value;
         int counter_type = visible_types[type];
         lv_coord_t x_offset = (lv_coord_t)((type * step) - ((visible_count - 1) * step / 2));
-        lv_coord_t local_x = anchor_x + x_offset;
-        lv_coord_t local_y = anchor_y;
+        lv_coord_t local_x;
+        lv_coord_t local_y;
+
+        if (spec_is_wedge(spec)) {
+            /* Badges on an arc near the rim, centered on the wedge
+               bisector: constant clearance from both the rim and the
+               life/name labels regardless of badge count. */
+            const int radius = 152;
+            const int step_deg = 12;
+            int a = (wedge_bis + ((visible_count - 1) * step_deg / 2)
+                     - (type * step_deg) + 360) % 360;
+            local_x = wedge_polar(lv_trigo_cos((int16_t)a), radius);
+            local_y = wedge_polar(lv_trigo_sin((int16_t)a), radius);
+        } else {
+            local_x = anchor_x + x_offset;
+            local_y = anchor_y;
+        }
 
         value = get_counter_value(player_index, (counter_type_t)counter_type);
 
@@ -393,38 +481,71 @@ void refresh_multiplayer_ui(void)
         lv_obj_t *life_lbl = mp_state.life_labels[i];
         lv_obj_t *name_lbl = mp_state.name_labels[i];
         int16_t angle = layout->angle_fn(orientation_mode, i);
-        int16_t counter_angle = get_counter_row_angle(orientation_mode, panel, angle);
+        int16_t counter_angle = get_counter_row_angle(orientation_mode, spec, panel, angle);
         lv_coord_t nx = (orientation_mode != ORIENTATION_MODE_CENTRIC) ? spec->nudge_x : 0;
+        lv_coord_t bx = nx;
+        lv_coord_t by = 0;
         lv_color_t text_color;
+
+        if (spec_is_wedge(spec)) {
+            /* Wedge panels are full-screen: anchor the label stack on the
+               wedge bisector instead of the panel center. */
+            bx = wedge_geom[i].label_dx;
+            by = wedge_geom[i].label_dy;
+            if (angle == 1800) {
+                /* The 180-degree flip rotates the life/name pair around
+                   their shared pivot, moving the name ~30px toward the
+                   rim; pull the anchor inward to keep the same clearance
+                   from the counter arc as in absolute mode. */
+                bx = (lv_coord_t)((bx * 85) / 100);
+                by = (lv_coord_t)((by * 85) / 100);
+            }
+        }
 
         text_color = refresh_mp_panel(panel, life_lbl, name_lbl,
                                       spec->player_index, spec->color_index);
 
         if (layout->switch_font_by_orientation) {
+            const lv_font_t *life_font;
+            lv_coord_t life_pivot_y;
+
+            if (spec_is_wedge(spec)) {
+                /* Pie slices have room for the big font in every
+                   orientation; drop to the smaller one only when the
+                   value is too wide and would reach into the counter
+                   arc beside the number (3+ digits). */
+                life_font = &lv_font_montserrat_bold_56;
+                if (life_lbl != NULL) {
+                    lv_point_t ts;
+                    lv_txt_get_size(&ts, lv_label_get_text(life_lbl),
+                                    life_font, 0, 0, LV_COORD_MAX,
+                                    LV_TEXT_FLAG_NONE);
+                    if (ts.x > 84) life_font = &lv_font_montserrat_bold_44;
+                }
+            } else if (orientation_mode == ORIENTATION_MODE_CENTRIC) {
+                /* Rect quadrants: rotated bold-56 labels don't fit */
+                life_font = &lv_font_montserrat_bold_44;
+            } else {
+                life_font = &lv_font_montserrat_bold_56;
+            }
+            life_pivot_y = (life_font == &lv_font_montserrat_bold_56) ? 12 : 10;
+
             if (life_lbl != NULL) {
                 lv_obj_clear_flag(life_lbl, LV_OBJ_FLAG_HIDDEN);
-                if (orientation_mode == ORIENTATION_MODE_CENTRIC) {
-                    lv_obj_set_style_text_font(life_lbl, &lv_font_montserrat_bold_44, 0);
-                    lv_obj_align(life_lbl, LV_ALIGN_CENTER, nx, -10);
-                } else {
-                    lv_obj_set_style_text_font(life_lbl, &lv_font_montserrat_bold_56, 0);
-                    lv_obj_align(life_lbl, LV_ALIGN_CENTER, nx, -12);
-                }
+                lv_obj_set_style_text_font(life_lbl, life_font, 0);
+                lv_obj_align(life_lbl, LV_ALIGN_CENTER, bx, by - life_pivot_y);
             }
             if (name_lbl != NULL) {
                 lv_obj_clear_flag(name_lbl, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_align(name_lbl, LV_ALIGN_CENTER, nx, 30);
+                lv_obj_align(name_lbl, LV_ALIGN_CENTER, bx, by + 30);
             }
-            if (orientation_mode == ORIENTATION_MODE_CENTRIC) {
-                apply_label_rotation(life_lbl, name_lbl, angle, 10, -30);
-            } else {
-                apply_label_rotation(life_lbl, name_lbl, angle, 12, -30);
-            }
+            apply_label_rotation(life_lbl, name_lbl, angle, life_pivot_y, -30);
         } else {
             apply_label_rotation(life_lbl, name_lbl, angle, 10, -30);
         }
 
-        refresh_counter_rows(panel, mp_state.counter_rows[i], mp_state.counter_values[i],
+        refresh_counter_rows(spec, wedge_geom[i].bis_deg, panel,
+                             mp_state.counter_rows[i], mp_state.counter_values[i],
                              spec->player_index, text_color, angle, counter_angle);
     }
 }
@@ -529,6 +650,70 @@ void select_kick_timer(void)
     }
 }
 
+/* ---------- pie-slice (wedge) panels ----------
+   Full-screen panels clipped to an angular wedge with a draw-time angle
+   mask (the arc widget's primitive), and hit-tested by angle so taps land
+   on the right slice. This avoids rotating containers, whose transform
+   layers would not fit in the LVGL heap. */
+static lv_draw_mask_angle_param_t wedge_mask_params[MULTIPLAYER_COUNT];
+static int16_t wedge_mask_ids[MULTIPLAYER_COUNT];
+
+static bool wedge_contains_angle(const mp_panel_spec_t *spec, int angle)
+{
+    if (spec->wedge_start <= spec->wedge_end)
+        return angle >= spec->wedge_start && angle < spec->wedge_end;
+    /* range wraps past 0 degrees */
+    return angle >= spec->wedge_start || angle < spec->wedge_end;
+}
+
+static void event_wedge_panel(lv_event_t *e)
+{
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    const mp_panel_spec_t *spec;
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (mp_state.layout == NULL || idx < 0 || idx >= mp_state.layout->panel_count)
+        return;
+    spec = &mp_state.layout->panels[idx];
+
+    if (code == LV_EVENT_COVER_CHECK) {
+        /* The wedge mask means this panel does not fully cover its
+           rectangle, so siblings underneath must still be drawn. */
+        lv_cover_check_info_t *info = lv_event_get_param(e);
+        info->res = LV_COVER_RES_MASKED;
+    } else if (code == LV_EVENT_DRAW_MAIN_BEGIN) {
+        lv_draw_mask_angle_init(&wedge_mask_params[idx], WEDGE_CX, WEDGE_CY,
+                                spec->wedge_start, spec->wedge_end);
+        wedge_mask_ids[idx] = lv_draw_mask_add(&wedge_mask_params[idx], NULL);
+    } else if (code == LV_EVENT_DRAW_MAIN_END) {
+        /* Remove before children draw so labels are not clipped */
+        lv_draw_mask_remove_id(wedge_mask_ids[idx]);
+    } else if (code == LV_EVENT_HIT_TEST) {
+        lv_hit_test_info_t *info = lv_event_get_param(e);
+        int dx = info->point->x - WEDGE_CX;
+        int dy = info->point->y - WEDGE_CY;
+        if (dx == 0 && dy == 0) dx = 1; /* lv_atan2 needs a non-zero vector */
+        /* lv_atan2(y, x) matches the mask/arc angle convention
+           (0 = 3 o'clock, clockwise) — same call order as lv_arc */
+        info->res = wedge_contains_angle(spec, lv_atan2(dy, dx));
+    }
+}
+
+static void event_wedge_separators(lv_event_t *e)
+{
+    static const lv_point_t sep_center = {WEDGE_CX, WEDGE_CY};
+    lv_draw_ctx_t *draw_ctx = lv_event_get_draw_ctx(e);
+    lv_draw_line_dsc_t dsc;
+    int s;
+
+    lv_draw_line_dsc_init(&dsc);
+    dsc.color = lv_color_black();
+    dsc.width = 2;
+    for (s = 0; s < wedge_sep_count; s++) {
+        lv_draw_line(draw_ctx, &dsc, &sep_center, &wedge_sep_ends[s]);
+    }
+}
+
 /* ---------- layout rebuild ---------- */
 void rebuild_multiplayer_layout(int track)
 {
@@ -546,6 +731,10 @@ void rebuild_multiplayer_layout(int track)
     memset(&mp_state, 0, sizeof(mp_state));
     mp_state.layout = layout;
 
+    if (layout->panel_count > 0 && spec_is_wedge(&layout->panels[0])) {
+        wedge_compute_geometry(layout->panels, layout->panel_count);
+    }
+
     for (i = 0; i < layout->panel_count; i++) {
         const mp_panel_spec_t *spec = &layout->panels[i];
         int p = spec->player_index;
@@ -560,9 +749,21 @@ void rebuild_multiplayer_layout(int track)
         lv_obj_set_size(panel, spec->w, spec->h);
         lv_obj_set_pos(panel, spec->x, spec->y);
         lv_obj_set_style_radius(panel, 0, 0);
-        lv_obj_set_style_border_width(panel, 1, 0);
-        lv_obj_set_style_border_color(panel, lv_color_black(), 0);
         lv_obj_set_style_shadow_width(panel, 0, 0);
+        if (spec_is_wedge(spec)) {
+            /* Wedges adjoin; separators are drawn as lines on top */
+            lv_obj_set_style_border_width(panel, 0, 0);
+            lv_obj_add_flag(panel, LV_OBJ_FLAG_ADV_HITTEST);
+            /* Register per event code so the dispatcher filters the many
+               events (presses, draw phases) the handler doesn't act on */
+            lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_COVER_CHECK, (void *)(intptr_t)i);
+            lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_DRAW_MAIN_BEGIN, (void *)(intptr_t)i);
+            lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_DRAW_MAIN_END, (void *)(intptr_t)i);
+            lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_HIT_TEST, (void *)(intptr_t)i);
+        } else {
+            lv_obj_set_style_border_width(panel, 1, 0);
+            lv_obj_set_style_border_color(panel, lv_color_black(), 0);
+        }
         lv_obj_add_event_cb(panel, event_multiplayer_select, LV_EVENT_SHORT_CLICKED, (void *)(intptr_t)p);
         lv_obj_add_event_cb(panel, event_multiplayer_open_menu, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)p);
         mp_state.panels[i] = panel;
@@ -593,6 +794,14 @@ void rebuild_multiplayer_layout(int track)
         create_counter_row(panel, COUNTER_TYPE_EXPERIENCE,
             &mp_state.counter_rows[i][COUNTER_TYPE_EXPERIENCE],
             &mp_state.counter_values[i][COUNTER_TYPE_EXPERIENCE], p);
+    }
+
+    if (layout->panel_count > 0 && spec_is_wedge(&layout->panels[0])) {
+        /* Transparent overlay that draws the separator lines between
+           slices (LV_USE_LINE is disabled, so draw them directly). */
+        lv_obj_t *sep = make_plain_box(screen_multiplayer, 360, 360);
+        lv_obj_set_pos(sep, 0, 0);
+        lv_obj_add_event_cb(sep, event_wedge_separators, LV_EVENT_DRAW_MAIN, NULL);
     }
 
     mp_battery_icon = add_low_battery_icon(screen_multiplayer);
