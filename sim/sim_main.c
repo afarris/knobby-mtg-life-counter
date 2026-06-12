@@ -45,10 +45,11 @@ static void sim_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *
     lv_disp_flush_ready(drv);
 }
 
-static void save_screenshot_png(const char *filename)
+static int save_screenshot_png(const char *filename)
 {
+    int ok = 1;
     uint8_t *rgb = malloc(SCREEN_W * SCREEN_H * 3);
-    if (!rgb) { fprintf(stderr, "Failed to allocate RGB buffer\n"); return; }
+    if (!rgb) { fprintf(stderr, "Failed to allocate RGB buffer\n"); return 0; }
 
     {
         const int cx = SCREEN_W / 2;
@@ -78,10 +79,12 @@ static void save_screenshot_png(const char *filename)
 
     if (!stbi_write_png(filename, SCREEN_W, SCREEN_H, 3, rgb, SCREEN_W * 3)) {
         fprintf(stderr, "Failed to write %s\n", filename);
+        ok = 0;
     } else {
         printf("Saved: %s\n", filename);
     }
     free(rgb);
+    return ok;
 }
 
 static void render_frame(void)
@@ -214,7 +217,7 @@ static void print_usage(void)
            "  --life <p1,p2,...>     Set player life totals (default: starting-life for all)\n"
            "  --names <p1,p2,...>    Set player names (default: P1..P8)\n"
            "  --players <n>          Number of players in the game, 1-8 (default: 4)\n"
-           "  --track <n>            Players shown on screen, 1-4 (default: 4)\n"
+           "  --track <n>            Players shown on screen, 1-4 (default: 1)\n"
            "  --starting-life <n>    Starting/max life total (default: 40)\n"
            "  --selected <n>         Which player is selected, -1=none (default: -1)\n"
            "  --selected-players <csv> Players selected together, e.g. 0,2 (multi-select set)\n"
@@ -264,7 +267,7 @@ static void print_usage(void)
 }
 
 /* ---- CSV helpers ---- */
-static void parse_csv_ints(const char *csv, int *out, int max_count)
+static int parse_csv_ints(const char *csv, int *out, int max_count)
 {
     char buf[256];
     char *tok;
@@ -275,6 +278,7 @@ static void parse_csv_ints(const char *csv, int *out, int max_count)
         out[i++] = atoi(tok);
         tok = strtok(NULL, ",");
     }
+    return i;
 }
 
 static void parse_csv_strings(const char *csv, char names[][16], int max_count)
@@ -309,6 +313,7 @@ int main(int argc, char *argv[])
     const char *outdir = "screenshots";
     const char *output_filename = NULL;
     int life_values[MAX_DISPLAY_PLAYERS] = {0};
+    int life_count = 0;
     int life_set = 0;
     char name_values[MAX_GAME_PLAYERS][16] = {{0}};
     int names_set = 0;
@@ -362,7 +367,7 @@ int main(int argc, char *argv[])
         } else if (strcmp(argv[i], "--print-settings-pages") == 0) {
             print_settings_pages = 1;
         } else if (strcmp(argv[i], "--life") == 0 && i + 1 < argc) {
-            parse_csv_ints(argv[++i], life_values, MAX_DISPLAY_PLAYERS);
+            life_count = parse_csv_ints(argv[++i], life_values, MAX_DISPLAY_PLAYERS);
             life_set = 1;
         } else if (strcmp(argv[i], "--names") == 0 && i + 1 < argc) {
             parse_csv_strings(argv[++i], name_values, MAX_GAME_PLAYERS);
@@ -483,7 +488,9 @@ int main(int argc, char *argv[])
     /* Apply RAM-only overrides after navigation */
     #define APPLY_RAM_OVERRIDES() do { \
         if (life_set) { \
-            for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) \
+            /* only override the players the CSV named; a short CSV must \
+               not zero (and auto-eliminate) the rest */ \
+            for (i = 0; i < life_count && i < MAX_DISPLAY_PLAYERS; i++) \
                 player_life[i] = life_values[i]; \
         } \
         if (names_set) { \
@@ -615,7 +622,8 @@ int main(int argc, char *argv[])
             snprintf(path, sizeof(path), "%s/%s", outdir, output_filename);
         else
             snprintf(path, sizeof(path), "%s/%s.png", outdir, screen_name);
-        save_screenshot_png(path);
+        if (!save_screenshot_png(path))
+            return 1;
     }
 
     return 0;

@@ -289,8 +289,9 @@ shot "all_damage_random.png" --screen all-damage \
 # ============================================================
 # 15. Player-menu for random player
 # ============================================================
-shot "player_menu_p$((RANDOM % 4)).png" --screen player-menu \
-    --menu-player $((RANDOM % 4))
+mp=$((RANDOM % 4))
+shot "player_menu_p${mp}.png" --screen player-menu \
+    --menu-player "$mp"
 
 # ============================================================
 # 16. Battery at random legal voltage
@@ -316,7 +317,8 @@ done
 # ============================================================
 # 17. Dice with a result
 # ============================================================
-shot "dice_$((RANDOM % 20 + 1)).png" --screen dice --dice $((RANDOM % 20 + 1))
+d=$((RANDOM % 20 + 1))
+shot "dice_${d}.png" --screen dice --dice "$d"
 
 # ============================================================
 # 18. Event log with random data
@@ -339,7 +341,17 @@ shot "1p_timer_preview_p444.png" --screen 1p --track 1 \
     --random-counters
 
 # ============================================================
-# 20. Intro screen
+# 20. Menus, rename, counters-menu (previously uncovered)
+# ============================================================
+shot "menu_main.png" --screen menu
+shot "menu_tools.png" --screen tools
+shot "counters_menu.png" --screen counters-menu
+shot "rename.png" --screen rename
+shot "rename_longnames.png" --screen rename \
+    --names "Maximilian,Bartholomew,Christopher,Evangelina"
+
+# ============================================================
+# 21. Intro screen
 # ============================================================
 shot "intro.png" --screen intro
 
