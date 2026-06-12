@@ -509,6 +509,7 @@ void damage_apply(void)
     int source;
 
     if (selected_enemy < 0 || selected_enemy >= active_enemy_count) return;
+    if (cmd_damage_target < 0 || cmd_damage_target >= MAX_DISPLAY_PLAYERS) return;
 
     delta = enemies[selected_enemy].damage - damage_start_value;
     if (delta == 0) return;

@@ -72,7 +72,7 @@ static int clamp_value(int value, int min_value, int max_value)
 static int scale_value(int value, int input_max, int output_max)
 {
     if (value < 0 || input_max <= 0 || output_max <= 0) return 0;
-    return (int)(((int64_t)value * output_max) + (input_max / 2)) / input_max;
+    return (int)((((int64_t)value * output_max) + (input_max / 2)) / input_max);
 }
 
 static int get_display_width(void)
