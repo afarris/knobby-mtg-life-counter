@@ -279,8 +279,12 @@ static void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t
     return;
   }
 
-  lcd->drawBitmap(area->x1, area->y1, area->x2 - area->x1 + 1,
-                  area->y2 - area->y1 + 1, (const uint8_t *)color_p);
+  if (!lcd->drawBitmap(area->x1, area->y1, area->x2 - area->x1 + 1,
+                       area->y2 - area->y1 + 1, (const uint8_t *)color_p)) {
+    /* No transfer was queued, so onRefreshFinishCallback will never fire to
+       release LVGL — release it here to avoid a permanent flush stall. */
+    lv_disp_flush_ready(disp);
+  }
 }
 
 IRAM_ATTR bool onRefreshFinishCallback(void *user_data)
@@ -369,8 +373,10 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     return;
   }
 
-  int read_touch_result = tp->readPoints(&point, 1);
+  /* Clear before the (multi-ms) I2C read so a touch interrupt arriving
+     mid-read is preserved for the next poll instead of being lost. */
   touch_irq_pending = false;
+  int read_touch_result = tp->readPoints(&point, 1);
   if (read_touch_result > 0)
   {
     if (!touch_point_valid(point.x, point.y)) {
@@ -380,8 +386,13 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     }
 
     bool was_dimmed = activity_kick();
-    if (was_dimmed) {
+    if (was_dimmed || in_undim_grace()) {
+      /* The tap that wakes (or just woke) a dimmed screen must not also
+         click the widget under the finger; swallow the whole gesture for
+         the grace window, matching the swipe/encoder suppression. */
       touch_reset_state();
+      data->state = LV_INDEV_STATE_RELEASED;
+      return;
     }
     data->point.x = point.x;
     data->point.y = point.y;
@@ -551,7 +562,13 @@ void scr_lvgl_init()
   }
   size_t lv_cache_rows = STAGE_BOUNCE_ROWS;
 
-  disp_draw_buf = (lv_color_t *)heap_caps_malloc(lv_cache_rows * SCREEN_RES_HOR * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  disp_draw_buf = (lv_color_t *)heap_caps_malloc(lv_cache_rows * SCREEN_RES_HOR * sizeof(lv_color_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (disp_draw_buf == NULL) {
+    /* Every flush writes through this buffer; a NULL here would crash on the
+       first render. frame_stage has a fallback, but this one is mandatory. */
+    Serial.printf("FATAL: display draw buffer alloc failed\n");
+    while (1) { delay(1000); }
+  }
   frame_stage = (lv_color_t *)heap_caps_malloc(
       SCREEN_RES_VER * SCREEN_RES_HOR * sizeof(lv_color_t),
       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
