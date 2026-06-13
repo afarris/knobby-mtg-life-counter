@@ -240,10 +240,9 @@ static const char *auto_eliminate_label(int val)
    lv_label_set_text may copy — never switch the refresh to
    lv_label_set_text_static. */
 
-static int autodim_get(void) { return auto_dim_setting; }
+static int autodim_get(void) { return nvs_get_auto_dim(); }
 static void autodim_set(int v)
 {
-    auto_dim_setting = v;
     nvs_set_auto_dim(v);
     if (v == AUTO_DIM_OFF && dimmed) {
         dimmed = false;

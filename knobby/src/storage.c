@@ -56,7 +56,11 @@ void knob_nvs_init(void)
         cached_brightness = clamp_brightness(bri_val);
         cached_num_players = (np_val < 1) ? 1 : (np_val > MAX_GAME_PLAYERS) ? MAX_GAME_PLAYERS : np_val;
         cached_players_to_track = (pt_val < 1) ? 1 : (pt_val > MAX_DISPLAY_PLAYERS) ? MAX_DISPLAY_PLAYERS : pt_val;
-        cached_life_total = (lt_val < 0) ? 0 : (lt_val > LIFE_MAX) ? LIFE_MAX : lt_val;
+        /* Every consumer assumes track <= num_players; foreign/old NVS could
+           store an inconsistent pair that the per-field clamps above allow. */
+        if (cached_players_to_track > cached_num_players)
+            cached_players_to_track = cached_num_players;
+        cached_life_total = (lt_val < 1) ? 1 : (lt_val > LIFE_MAX) ? LIFE_MAX : lt_val;
 
         int8_t ae_val = 1;
         nvs_get_i8(handle, "auto_elim", &ae_val);
@@ -168,7 +172,7 @@ int nvs_get_life_total(void)
 
 void nvs_set_life_total(int value)
 {
-    cached_life_total = (value < 0) ? 0 : (value > LIFE_MAX) ? LIFE_MAX : value;
+    cached_life_total = (value < 1) ? 1 : (value > LIFE_MAX) ? LIFE_MAX : value;
     settings_dirty = true;
 }
 
@@ -238,8 +242,12 @@ void settings_save(void)
         nvs_set_i8(handle, "rand_first", (int8_t)cached_random_first);
         nvs_set_i8(handle, "multi_sel", (int8_t)cached_multi_select);
         nvs_set_blob(handle, "name_list", cached_name_list, sizeof(cached_name_list));
-        nvs_commit(handle);
+        esp_err_t commit_err = nvs_commit(handle);
         nvs_close(handle);
-        settings_dirty = false;
+        /* Keep the dirty flag set if the commit failed (e.g. NVS full) so a
+           later save retries instead of silently dropping the change. */
+        if (commit_err == ESP_OK) {
+            settings_dirty = false;
+        }
     }
 }
