@@ -433,7 +433,6 @@ static void event_open_damage_log(lv_event_t *e)
 static void event_general_reset(lv_event_t *e)
 {
     (void)e;
-    damage_log_reset();
     reset_all_values();
     back_to_main();
     lv_indev_wait_release(lv_indev_get_act());

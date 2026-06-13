@@ -36,6 +36,10 @@ int player_counters[MAX_DISPLAY_PLAYERS][COUNTER_TYPE_COUNT] = {{0}};
 counter_type_t counter_edit_type = COUNTER_TYPE_COMMANDER_TAX;
 int counter_edit_value = 0;
 bool player_eliminated[MAX_DISPLAY_PLAYERS] = {false};
+/* Conceded players (manual elimination) tracked apart from auto-elimination,
+   so an undo that recomputes auto conditions can't revive someone who
+   manually conceded while still above 0 life. */
+static bool player_manually_eliminated[MAX_DISPLAY_PLAYERS] = {false};
 
 typedef struct {
     bool valid;
@@ -98,6 +102,11 @@ void undo_elimination_action(int player)
     } else if (action.event_type == LOG_EVT_COUNTER) {
         undo_counter_change(player, action.source, action.delta);
     }
+
+    /* Drop the log entry that caused the elimination so the same event can't
+       be undone a second time from the Event Log. The eliminating event is
+       the newest one for this player (eliminated players accrue no more). */
+    damage_log_remove_last_for(player, action.event_type);
 }
 
 void check_player_elimination(int player)
@@ -125,6 +134,10 @@ void check_player_elimination(int player)
         }
     }
 
+    if (player_manually_eliminated[player]) {
+        now_eliminated = true;
+    }
+
     player_eliminated[player] = now_eliminated;
     if (!now_eliminated) {
         clear_player_elimination_action(player);
@@ -148,6 +161,7 @@ void manual_eliminate_player(int player)
     /* Same solo-mode exemption as check_player_elimination. */
     if (nvs_get_players_to_track() <= 1) return;
     player_eliminated[player] = true;
+    player_manually_eliminated[player] = true;
     clear_player_elimination_action(player);
     if (player_selected[player]) {
         player_selected[player] = false;
@@ -161,6 +175,7 @@ void manual_uneliminate_player(int player)
     if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
     if (!player_eliminated[player]) return;
     player_eliminated[player] = false;
+    player_manually_eliminated[player] = false;
     clear_player_elimination_action(player);
     refresh_player_ui();
 }
@@ -643,6 +658,8 @@ void knob_life_reset(void)
     if (active_enemy_count < 0) active_enemy_count = 0;
     if (active_enemy_count > MAX_ENEMY_COUNT) active_enemy_count = MAX_ENEMY_COUNT;
 
+    damage_log_reset();
+
     pending_life_delta = 0;
     selection_clear();
     life_preview_active = false;
@@ -661,6 +678,8 @@ void knob_life_reset(void)
     memset(cmd_damage_totals, 0, sizeof(cmd_damage_totals));
     memset(player_counters, 0, sizeof(player_counters));
     memset(player_eliminated, 0, sizeof(player_eliminated));
+    memset(player_manually_eliminated, 0, sizeof(player_manually_eliminated));
+    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) clear_player_elimination_action(i);
     all_damage_value = 0;
     counter_edit_type = COUNTER_TYPE_COMMANDER_TAX;
     counter_edit_value = 0;

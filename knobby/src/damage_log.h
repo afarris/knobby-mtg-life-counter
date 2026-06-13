@@ -15,6 +15,7 @@ extern lv_obj_t *screen_damage_log;
 
 void damage_log_add(int player, int delta, uint8_t event_type, int source);
 void damage_log_reset(void);
+void damage_log_remove_last_for(int player, uint8_t event_type);
 void damage_log_select_next(void);
 void damage_log_select_prev(void);
 void damage_log_undo_selected(void);

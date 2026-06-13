@@ -47,6 +47,27 @@ void damage_log_reset(void)
     damage_log_head = 0;
 }
 
+/* Remove the newest entry matching player + event_type (used by elimination
+   undo so the eliminating event can't also be undone from the log). */
+void damage_log_remove_last_for(int player, uint8_t event_type)
+{
+    int i, j;
+    for (i = 0; i < damage_log_count; i++) {
+        int idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+        if (damage_log[idx].player == player &&
+            damage_log[idx].event_type == event_type) {
+            for (j = i; j > 0; j--) {
+                int dst = (damage_log_head - 1 - j + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+                int src = (damage_log_head - j + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+                damage_log[dst] = damage_log[src];
+            }
+            damage_log_head = (damage_log_head - 1 + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+            damage_log_count--;
+            return;
+        }
+    }
+}
+
 static void update_selection_highlight(void);
 static void refresh_damage_log_ui(void);
 
