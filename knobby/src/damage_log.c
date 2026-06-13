@@ -4,7 +4,7 @@
 // ---------- data ----------
 typedef struct {
     uint32_t timestamp_ms;
-    int8_t   player;       // target: -1 = single player, 0-3 = multiplayer index
+    int8_t   player;       // target player index, 0..MAX_GAME_PLAYERS-1
     int8_t   source;       // source for cmd damage or counter type, -1 if N/A
     uint8_t  event_type;   // log_event_type_t
     int16_t  delta;
@@ -130,6 +130,7 @@ static void format_log_line(damage_log_entry_t *entry, char *buf, size_t buf_sz)
     int abs_delta = entry->delta > 0 ? entry->delta : -entry->delta;
     char time_str[16];
 
+    buf[0] = '\0';  /* ensure a defined string if no branch below matches */
     format_elapsed(elapsed_s, time_str, sizeof(time_str));
 
     if (entry->event_type == LOG_EVT_CMD_DAMAGE && entry->source >= 0 &&
@@ -140,7 +141,8 @@ static void format_log_line(damage_log_entry_t *entry, char *buf, size_t buf_sz)
                  player_names[entry->source],
                  abs_delta,
                  player_names[entry->player]);
-    } else if (entry->event_type == LOG_EVT_COUNTER && entry->source >= 0 && entry->player >= 0) {
+    } else if (entry->event_type == LOG_EVT_COUNTER && entry->source >= 0 &&
+               entry->player >= 0 && entry->player < MAX_GAME_PLAYERS) {
         const counter_definition_t *definition = get_counter_definition((counter_type_t)entry->source);
         const char *action = entry->delta > 0 ? "increased" : "decreased";
         const char *counter_name = (definition != NULL) ? definition->display_name : "Counter";
@@ -175,9 +177,12 @@ static void update_selection_highlight(void)
         }
     }
 
-    /* Scroll selected item into view */
+    /* Scroll selected item into view. Force the flex layout first: rows
+       recreated this pass still have {0,0,0,0} coords until LVGL lays them
+       out, which would scroll to the wrong place. */
     if (sel_child >= 0 && sel_child < (int)child_count) {
         lv_obj_t *sel = lv_obj_get_child(damage_log_container, sel_child);
+        lv_obj_update_layout(damage_log_container);
         lv_coord_t sel_y = lv_obj_get_y(sel);
         lv_coord_t sel_h = lv_obj_get_height(sel);
         lv_coord_t cont_h = lv_obj_get_height(damage_log_container);

@@ -249,9 +249,11 @@ static void update_mru_highlight(void)
         }
     }
 
-    /* Scroll selected into view */
+    /* Scroll selected into view. Force layout first: rows rebuilt this pass
+       have {0,0,0,0} coords until LVGL lays out the flex container. */
     if (mru_selected >= 0 && mru_selected < (int)child_count) {
         lv_obj_t *sel = lv_obj_get_child(mru_list_container, mru_selected);
+        lv_obj_update_layout(mru_list_container);
         lv_coord_t sel_y = lv_obj_get_y(sel);
         lv_coord_t sel_h = lv_obj_get_height(sel);
         lv_coord_t cont_h = lv_obj_get_height(mru_list_container);
