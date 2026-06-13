@@ -59,7 +59,6 @@ typedef struct {
 
 typedef struct {
     knob_event_t event;
-    int cont;
 } knob_input_event_t;
 
 typedef struct {

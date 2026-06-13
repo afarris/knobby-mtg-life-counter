@@ -36,8 +36,6 @@ static lv_disp_drv_t disp_drv;
 static lv_indev_t *indev_touchpad;
 static ESP_PanelLcd *lcd = NULL;
 static ESP_PanelTouch *touch = NULL;
-static int32_t ctx_diff;
-static lv_indev_state_t encoder_state;
 static volatile bool touch_irq_pending = false;
 #define USE_CUSTOM_INIT_CMD 0 // 是否用自定义的初始化代码
 
@@ -419,67 +417,19 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
   }
 }
 
-static int32_t _knob_calculate_diff(knob_handle_t knob, knob_event_t event)
-{
-   static int32_t last_v = 0;
-
-    int32_t diff = 0;
-    int32_t invd = iot_knob_get_count_value(knob);
-    knob_change(event,invd);       
-    if (last_v ^ invd) {
-
-        diff = (int32_t)((uint32_t)invd - (uint32_t)last_v);
-        diff += (event == KNOB_RIGHT && invd < last_v) ? 16 :
-                (event == KNOB_LEFT && invd > last_v) ? -16 : 0;
-        last_v = invd;
-    }
-
-    return diff;
-}
-
+/* Each detent enqueues one event onto the SPSC ring in knob.c; the main
+   loop drains it via knob_process_pending(). LVGL's encoder indev is not
+   used (no lv_group is attached), so there is no ctx_diff/knob_read path. */
 static void _knob_right_cb(void *arg, void *data)
 {
-    knob_handle_t knob = (knob_handle_t)arg;
-    // int32_t ctx = (int32_t )data;
-    int32_t diff = _knob_calculate_diff(knob,KNOB_RIGHT);
-    
-    
-    ctx_diff = (ctx_diff < 0)? diff : ctx_diff + diff;
-
+    (void)arg; (void)data;
+    knob_change(KNOB_RIGHT);
 }
 
 static void _knob_left_cb(void *arg, void *data)
 {
-    knob_handle_t knob = (knob_handle_t)arg;
-    // int32_t ctx = (int32_t )data; 
-    int32_t diff = _knob_calculate_diff(knob,KNOB_LEFT);
-    
-    ctx_diff = (ctx_diff > 0) ? ctx_diff : ctx_diff + diff;
-
-}
-
-
-
-static void knob_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
-{
-  knob_handle_t *knob = (knob_handle_t *)indev_drv -> user_data;
-  data->enc_diff = ctx_diff;
-  // data->state = (ctx_diff == 0) ? LV_INDEV_STATE_REL : LV_INDEV_STATE_PR;
-  data->state = LV_INDEV_STATE_REL;
-  // printf("ctx_diff = %d\r\n",ctx_diff);
-  ctx_diff = 0;
-  
-}
-
-static lv_indev_t *indev_knob_init(knob_handle_t *knob)
-{
-  assert(knob);
-  static lv_indev_drv_t indev_drv_knob;
-  lv_indev_drv_init(&indev_drv_knob);
-  indev_drv_knob.type = LV_INDEV_TYPE_ENCODER;
-  indev_drv_knob.read_cb = knob_read;
-  indev_drv_knob.user_data = (void *)knob;
-  return lv_indev_drv_register(&indev_drv_knob);
+    (void)arg; (void)data;
+    knob_change(KNOB_LEFT);
 }
 
 static lv_indev_t *indev_init(ESP_PanelTouch *tp)
@@ -602,10 +552,8 @@ void scr_lvgl_init()
         Serial.printf("knob create failed\n");
         return;
     }
-  iot_knob_register_cb(s_knob, KNOB_LEFT, _knob_left_cb, &ctx_diff);
-  iot_knob_register_cb(s_knob, KNOB_RIGHT, _knob_right_cb, &ctx_diff);
-  
-  indev_knob_init(&s_knob);
+  iot_knob_register_cb(s_knob, KNOB_LEFT, _knob_left_cb, NULL);
+  iot_knob_register_cb(s_knob, KNOB_RIGHT, _knob_right_cb, NULL);
 }
 
 #endif

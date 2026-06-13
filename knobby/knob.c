@@ -32,8 +32,8 @@ static volatile bool swipe_right_pending = false;
 
 // ---------- knob event queue ----------
 static knob_input_event_t knob_event_queue[KNOB_EVENT_QUEUE_SIZE];
-static volatile uint8_t knob_event_head = 0;
-static volatile uint8_t knob_event_tail = 0;
+static uint8_t knob_event_head = 0;  /* producer (encoder task) owns */
+static uint8_t knob_event_tail = 0;  /* consumer (main loop) owns */
 
 // ---------- swipe notifications ----------
 void knob_notify_swipe_up(void)
@@ -501,19 +501,23 @@ static void handle_knob_event(knob_event_t k)
     }
 }
 
-void knob_change(knob_event_t k, int cont)
+/* Producer: runs in the encoder esp_timer task, possibly on the other
+   core. Single-producer/single-consumer ring — only this side writes head,
+   only the consumer writes tail. On overflow the new detent is dropped
+   rather than advancing the consumer's tail (which would race it). */
+void knob_change(knob_event_t k)
 {
-    uint8_t next_head;
+    uint8_t head = __atomic_load_n(&knob_event_head, __ATOMIC_RELAXED);
+    uint8_t tail = __atomic_load_n(&knob_event_tail, __ATOMIC_ACQUIRE);
+    uint8_t next_head = (uint8_t)((head + 1U) % KNOB_EVENT_QUEUE_SIZE);
 
-    (void)cont;
-
-    next_head = (uint8_t)((knob_event_head + 1U) % KNOB_EVENT_QUEUE_SIZE);
-    if (next_head == knob_event_tail) {
-        knob_event_tail = (uint8_t)((knob_event_tail + 1U) % KNOB_EVENT_QUEUE_SIZE);
+    if (next_head == tail) {
+        return;  /* queue full: drop the newest detent */
     }
 
-    knob_event_queue[knob_event_head].event = k;
-    knob_event_head = next_head;
+    knob_event_queue[head].event = k;
+    /* Release so the consumer's acquire-load of head sees the slot write. */
+    __atomic_store_n(&knob_event_head, next_head, __ATOMIC_RELEASE);
 }
 
 void knob_process_pending(void)
@@ -541,9 +545,12 @@ void knob_process_pending(void)
         handle_swipe_navigation(KNOB_SWIPE_RIGHT, cur);
     }
 
-    while (knob_event_tail != knob_event_head && processed < 8U) {
-        knob_event_t event = knob_event_queue[knob_event_tail].event;
-        knob_event_tail = (uint8_t)((knob_event_tail + 1U) % KNOB_EVENT_QUEUE_SIZE);
+    uint8_t head = __atomic_load_n(&knob_event_head, __ATOMIC_ACQUIRE);
+    uint8_t tail = __atomic_load_n(&knob_event_tail, __ATOMIC_RELAXED);
+    while (tail != head && processed < 8U) {
+        knob_event_t event = knob_event_queue[tail].event;
+        tail = (uint8_t)((tail + 1U) % KNOB_EVENT_QUEUE_SIZE);
+        __atomic_store_n(&knob_event_tail, tail, __ATOMIC_RELEASE);
         handle_knob_event(event);
         processed++;
     }

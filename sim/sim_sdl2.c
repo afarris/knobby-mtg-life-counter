@@ -179,7 +179,6 @@ int main(int argc, char *argv[])
 static void handle_sdl_events(void)
 {
     SDL_Event event;
-    static int encoder_cont = 0;
 
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) {
@@ -188,19 +187,15 @@ static void handle_sdl_events(void)
             // Handled by sdl_mouse_read
         } else if (event.type == SDL_MOUSEWHEEL) {
             if (event.wheel.y > 0) {
-                encoder_cont++;
-                knob_change(KNOB_RIGHT, encoder_cont);
+                knob_change(KNOB_RIGHT);
             } else if (event.wheel.y < 0) {
-                encoder_cont--;
-                knob_change(KNOB_LEFT, encoder_cont);
+                knob_change(KNOB_LEFT);
             }
         } else if (event.type == SDL_KEYDOWN) {
             if (event.key.keysym.sym == SDLK_RIGHT) {
-                encoder_cont++;
-                knob_change(KNOB_RIGHT, encoder_cont);
+                knob_change(KNOB_RIGHT);
             } else if (event.key.keysym.sym == SDLK_LEFT) {
-                encoder_cont--;
-                knob_change(KNOB_LEFT, encoder_cont);
+                knob_change(KNOB_LEFT);
             } else if (event.key.keysym.sym == SDLK_UP) {
                 knob_notify_swipe_up();
             } else if (event.key.keysym.sym == SDLK_DOWN) {
