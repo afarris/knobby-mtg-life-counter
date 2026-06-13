@@ -214,6 +214,8 @@ static void event_menu_color(lv_event_t *e) {
 
 static void event_color_default(lv_event_t *e) {
   (void)e;
+  if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS)
+    return;
   player_has_override[menu_player] = false;
   player_life_color[menu_player] = false;
   refresh_player_ui();
@@ -222,6 +224,8 @@ static void event_color_default(lv_event_t *e) {
 
 static void event_color_life(lv_event_t *e) {
   (void)e;
+  if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS)
+    return;
   player_has_override[menu_player] = true;
   player_life_color[menu_player] = true;
   refresh_player_ui();
@@ -231,6 +235,8 @@ static void event_color_life(lv_event_t *e) {
 static void event_color_custom(lv_event_t *e) {
   char title_buf[32];
   (void)e;
+  if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS)
+    return;
   color_picker_index = player_color_index[menu_player];
   if (color_picker_title_label != NULL) {
     snprintf(title_buf, sizeof(title_buf), "%s\nColor",
@@ -264,6 +270,8 @@ void change_player_color(int delta) {
 }
 
 void commit_player_color(void) {
+  if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS)
+    return;
   player_has_override[menu_player] = true;
   player_color_index[menu_player] = color_picker_index;
   player_life_color[menu_player] = false;
