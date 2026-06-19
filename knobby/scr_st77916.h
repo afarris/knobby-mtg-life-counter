@@ -490,6 +490,8 @@ static lv_indev_t *indev_init(ESP_PanelTouch *tp)
   indev_drv_tp.type = LV_INDEV_TYPE_POINTER;
   indev_drv_tp.read_cb = touchpad_read;
   indev_drv_tp.user_data = (void *)tp;
+  indev_drv_tp.long_press_time = 500;
+  indev_drv_tp.long_press_repeat_time = 250;
   return lv_indev_drv_register(&indev_drv_tp);
 }
 

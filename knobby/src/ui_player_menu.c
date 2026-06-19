@@ -19,6 +19,7 @@ lv_obj_t *screen_player_color_picker = NULL;
 static lv_obj_t *label_all_damage_title = NULL;
 static lv_obj_t *label_all_damage_value = NULL;
 static lv_obj_t *label_all_damage_hint = NULL;
+static lv_obj_t *cb_include_myself = NULL;
 static lv_obj_t *label_counter_edit_title = NULL;
 static lv_obj_t *label_counter_edit_value = NULL;
 static lv_obj_t *label_counter_edit_hint = NULL;
@@ -87,6 +88,9 @@ void open_counter_menu(void)
 static void open_all_damage_screen(void)
 {
     all_damage_value = 0;
+    if (cb_include_myself != NULL) {
+        lv_obj_clear_state(cb_include_myself, LV_STATE_CHECKED);
+    }
     refresh_all_damage_ui();
     load_screen_if_needed(screen_player_all_damage);
 }
@@ -177,9 +181,17 @@ static void event_counter_experience(lv_event_t *e)
 static void event_all_damage_apply(lv_event_t *e)
 {
     int i;
+    bool include_myself = false;
+
+    if (cb_include_myself != NULL) {
+        include_myself = lv_obj_has_state(cb_include_myself, LV_STATE_CHECKED);
+    }
 
     (void)e;
     for (i = 0; i < nvs_get_players_to_track(); i++) {
+        if (i == menu_player && !include_myself) {
+            continue;
+        }
         damage_log_add(i, -all_damage_value, LOG_EVT_LIFE, -1);
         player_life[i] = clamp_life(player_life[i] - all_damage_value);
     }
@@ -359,16 +371,22 @@ void build_all_damage_screen(void)
     label_all_damage_value = lv_label_create(screen_player_all_damage);
     lv_obj_set_style_text_color(label_all_damage_value, lv_color_white(), 0);
     lv_obj_set_style_text_font(label_all_damage_value, &lv_font_montserrat_32, 0);
-    lv_obj_align(label_all_damage_value, LV_ALIGN_CENTER, 0, -8);
+    lv_obj_align(label_all_damage_value, LV_ALIGN_CENTER, 0, -25);
 
     label_all_damage_hint = lv_label_create(screen_player_all_damage);
     lv_label_set_text(label_all_damage_hint, "Turn knob, then apply");
     lv_obj_set_style_text_color(label_all_damage_hint, lv_color_hex(0x7A7A7A), 0);
     lv_obj_set_style_text_font(label_all_damage_hint, &lv_font_montserrat_14, 0);
-    lv_obj_align(label_all_damage_hint, LV_ALIGN_CENTER, 0, 38);
+    lv_obj_align(label_all_damage_hint, LV_ALIGN_CENTER, 0, 15);
+
+    cb_include_myself = lv_checkbox_create(screen_player_all_damage);
+    lv_checkbox_set_text(cb_include_myself, "Include Myself");
+    lv_obj_set_style_text_color(cb_include_myself, lv_color_white(), 0);
+    lv_obj_set_style_text_font(cb_include_myself, &lv_font_montserrat_14, 0);
+    lv_obj_align(cb_include_myself, LV_ALIGN_CENTER, 0, 55);
 
     lv_obj_t *btn = make_button(screen_player_all_damage, "Apply", 120, 46, event_all_damage_apply);
-    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -46);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -35);
 }
 
 void build_counter_edit_screen(void)
