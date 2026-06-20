@@ -142,6 +142,8 @@ int main(int argc, char *argv[])
     lv_indev_drv_init(&indev_drv_tp);
     indev_drv_tp.type = LV_INDEV_TYPE_POINTER;
     indev_drv_tp.read_cb = sdl_mouse_read;
+    indev_drv_tp.long_press_time = 500;
+    indev_drv_tp.long_press_repeat_time = 250;
     lv_indev_drv_register(&indev_drv_tp);
 
     knob_gui();
