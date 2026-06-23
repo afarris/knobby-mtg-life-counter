@@ -30,9 +30,8 @@ typedef enum {
 #define KNOB_SWIPE_AXIS_BIAS_DEN 2
 
 void knob_gui(void);
-void knob_cb(lv_event_t *e);
 
-void knob_change(knob_event_t k,int cont);
+void knob_change(knob_event_t k);
 void knob_process_pending(void);
 bool activity_kick(void);
 knob_swipe_direction_t knob_classify_swipe_direction(lv_obj_t *screen,

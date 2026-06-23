@@ -31,11 +31,9 @@ static volatile bool swipe_right_pending = false;
 #define SWIPE_HINT_BG_OPACITY_MAX 120
 
 // ---------- knob event queue ----------
-static int last_knob_cont = 0;
-static bool knob_initialized = false;
 static knob_input_event_t knob_event_queue[KNOB_EVENT_QUEUE_SIZE];
-static volatile uint8_t knob_event_head = 0;
-static volatile uint8_t knob_event_tail = 0;
+static uint8_t knob_event_head = 0;  /* producer (encoder task) owns */
+static uint8_t knob_event_tail = 0;  /* consumer (main loop) owns */
 
 // ---------- swipe notifications ----------
 void knob_notify_swipe_up(void)
@@ -74,7 +72,7 @@ static int clamp_value(int value, int min_value, int max_value)
 static int scale_value(int value, int input_max, int output_max)
 {
     if (value < 0 || input_max <= 0 || output_max <= 0) return 0;
-    return (int)(((int64_t)value * output_max) + (input_max / 2)) / input_max;
+    return (int)((((int64_t)value * output_max) + (input_max / 2)) / input_max);
 }
 
 static int get_display_width(void)
@@ -324,16 +322,8 @@ static void handle_back_navigation(lv_obj_t *screen)
         lv_scr_load(previous_screen);
     } else if (screen == screen_tools_menu) {
         lv_scr_load(screen_quad_menu);
-    } else if (screen == screen_screen_settings_menu) {
-        settings_save();
-        lv_scr_load(screen_quad_menu);
-    } else if (screen == screen_settings_page2) {
-        lv_scr_load(screen_screen_settings_menu);
-    } else if (screen == screen_settings) {
-        settings_save();
-        lv_scr_load(screen_screen_settings_menu);
-    } else if (screen == screen_battery) {
-        lv_scr_load(screen_screen_settings_menu);
+    } else if (settings_handle_back(screen)) {
+        /* settings pages and their sub-screens (brightness, battery) */
     } else if (screen == screen_dice) {
         lv_scr_load(screen_tools_menu);
     } else if (screen == screen_damage_log) {
@@ -393,10 +383,6 @@ void reset_all_values(void)
     start_player_selection_animation();
 }
 
-void knob_cb(lv_event_t *e)
-{
-    (void)e;
-}
 
 // ---------- init ----------
 void knob_gui(void)
@@ -457,7 +443,7 @@ static void handle_knob_event(knob_event_t k)
     }
     else if (lv_scr_act() == screen_1p)
     {
-        selected_player = 0;
+        selection_set_single(0);
         if (k == KNOB_LEFT)      change_player_life(-1);
         else if (k == KNOB_RIGHT) change_player_life(+1);
     }
@@ -515,26 +501,23 @@ static void handle_knob_event(knob_event_t k)
     }
 }
 
-void knob_change(knob_event_t k, int cont)
+/* Producer: runs in the encoder esp_timer task, possibly on the other
+   core. Single-producer/single-consumer ring — only this side writes head,
+   only the consumer writes tail. On overflow the new detent is dropped
+   rather than advancing the consumer's tail (which would race it). */
+void knob_change(knob_event_t k)
 {
-    uint8_t next_head;
+    uint8_t head = __atomic_load_n(&knob_event_head, __ATOMIC_RELAXED);
+    uint8_t tail = __atomic_load_n(&knob_event_tail, __ATOMIC_ACQUIRE);
+    uint8_t next_head = (uint8_t)((head + 1U) % KNOB_EVENT_QUEUE_SIZE);
 
-    if (!knob_initialized)
-    {
-        last_knob_cont = cont;
-        knob_initialized = true;
+    if (next_head == tail) {
+        return;  /* queue full: drop the newest detent */
     }
 
-    last_knob_cont = cont;
-
-    next_head = (uint8_t)((knob_event_head + 1U) % KNOB_EVENT_QUEUE_SIZE);
-    if (next_head == knob_event_tail) {
-        knob_event_tail = (uint8_t)((knob_event_tail + 1U) % KNOB_EVENT_QUEUE_SIZE);
-    }
-
-    knob_event_queue[knob_event_head].event = k;
-    knob_event_queue[knob_event_head].cont = cont;
-    knob_event_head = next_head;
+    knob_event_queue[head].event = k;
+    /* Release so the consumer's acquire-load of head sees the slot write. */
+    __atomic_store_n(&knob_event_head, next_head, __ATOMIC_RELEASE);
 }
 
 void knob_process_pending(void)
@@ -562,9 +545,12 @@ void knob_process_pending(void)
         handle_swipe_navigation(KNOB_SWIPE_RIGHT, cur);
     }
 
-    while (knob_event_tail != knob_event_head && processed < 8U) {
-        knob_event_t event = knob_event_queue[knob_event_tail].event;
-        knob_event_tail = (uint8_t)((knob_event_tail + 1U) % KNOB_EVENT_QUEUE_SIZE);
+    uint8_t head = __atomic_load_n(&knob_event_head, __ATOMIC_ACQUIRE);
+    uint8_t tail = __atomic_load_n(&knob_event_tail, __ATOMIC_RELAXED);
+    while (tail != head && processed < 8U) {
+        knob_event_t event = knob_event_queue[tail].event;
+        tail = (uint8_t)((tail + 1U) % KNOB_EVENT_QUEUE_SIZE);
+        __atomic_store_n(&knob_event_tail, tail, __ATOMIC_RELEASE);
         handle_knob_event(event);
         processed++;
     }

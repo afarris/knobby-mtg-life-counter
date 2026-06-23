@@ -7,6 +7,9 @@
 uint32_t sim_millis(void);
 void sim_tick_advance(uint32_t ms);
 
+/* Fill the event log with 40 random entries (--random-log fixture) */
+void sim_populate_random_log(void);
+
 /* Pre-populate the in-memory NVS store before knob_nvs_init() runs.
  * This lets CLI flags control settings that knob_nvs.c reads at init. */
 void sim_nvs_preset_i8(const char *key, int8_t value);

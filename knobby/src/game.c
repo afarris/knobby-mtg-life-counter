@@ -21,7 +21,7 @@ int selected_enemy = -1;
 int dice_result = 0;
 
 int player_life[MAX_DISPLAY_PLAYERS] = {40, 40, 40, 40};
-int selected_player = -1;
+bool player_selected[MAX_DISPLAY_PLAYERS] = {false};
 char player_names[MAX_GAME_PLAYERS][16] = {
     "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"
 };
@@ -31,12 +31,15 @@ int all_damage_value = 0;
 int cmd_damage_target = -1;
 static int damage_start_value = 0;
 int pending_life_delta = 0;
-int preview_player = -1;
 bool life_preview_active = false;
 int player_counters[MAX_DISPLAY_PLAYERS][COUNTER_TYPE_COUNT] = {{0}};
 counter_type_t counter_edit_type = COUNTER_TYPE_COMMANDER_TAX;
 int counter_edit_value = 0;
 bool player_eliminated[MAX_DISPLAY_PLAYERS] = {false};
+/* Conceded players (manual elimination) tracked apart from auto-elimination,
+   so an undo that recomputes auto conditions can't revive someone who
+   manually conceded while still above 0 life. */
+static bool player_manually_eliminated[MAX_DISPLAY_PLAYERS] = {false};
 
 typedef struct {
     bool valid;
@@ -99,6 +102,11 @@ void undo_elimination_action(int player)
     } else if (action.event_type == LOG_EVT_COUNTER) {
         undo_counter_change(player, action.source, action.delta);
     }
+
+    /* Drop the log entry that caused the elimination so the same event can't
+       be undone a second time from the Event Log. The eliminating event is
+       the newest one for this player (eliminated players accrue no more). */
+    damage_log_remove_last_for(player, action.event_type);
 }
 
 void check_player_elimination(int player)
@@ -107,7 +115,10 @@ void check_player_elimination(int player)
     bool was_eliminated = player_eliminated[player];
     bool now_eliminated = false;
 
-    if (nvs_get_auto_eliminate()) {
+    /* Elimination is a multiplayer concept: with a single tracked player
+       there is no eliminated-menu route in the 1p UI, so eliminating
+       player 0 would brick the counter until reset. */
+    if (nvs_get_auto_eliminate() && nvs_get_players_to_track() > 1) {
         if (player_life[player] <= 0) {
             now_eliminated = true;
         } else {
@@ -123,9 +134,19 @@ void check_player_elimination(int player)
         }
     }
 
+    if (player_manually_eliminated[player]) {
+        now_eliminated = true;
+    }
+
     player_eliminated[player] = now_eliminated;
     if (!now_eliminated) {
         clear_player_elimination_action(player);
+    } else if (player_selected[player]) {
+        /* An eliminated player is no longer a life-change target: drop it
+           from the selection so the knob doesn't preview onto a dead panel
+           that can't be tapped to deselect. */
+        player_selected[player] = false;
+        select_kick_timer();
     }
 
     if (was_eliminated != now_eliminated) {
@@ -137,8 +158,15 @@ void manual_eliminate_player(int player)
 {
     if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
     if (player_eliminated[player]) return;
+    /* Same solo-mode exemption as check_player_elimination. */
+    if (nvs_get_players_to_track() <= 1) return;
     player_eliminated[player] = true;
+    player_manually_eliminated[player] = true;
     clear_player_elimination_action(player);
+    if (player_selected[player]) {
+        player_selected[player] = false;
+        select_kick_timer();
+    }
     refresh_player_ui();
 }
 
@@ -147,6 +175,7 @@ void manual_uneliminate_player(int player)
     if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
     if (!player_eliminated[player]) return;
     player_eliminated[player] = false;
+    player_manually_eliminated[player] = false;
     clear_player_elimination_action(player);
     refresh_player_ui();
 }
@@ -380,33 +409,91 @@ int apply_counter_edit(void)
     return change_delta;
 }
 
+// ---------- player selection set ----------
+int selection_count(void)
+{
+    int i, n = 0;
+    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++)
+        if (player_selected[i]) n++;
+    return n;
+}
+
+bool is_player_selected(int player)
+{
+    if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return false;
+    return player_selected[player];
+}
+
+void selection_clear(void)
+{
+    int i;
+    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++)
+        player_selected[i] = false;
+}
+
+void selection_toggle(int player)
+{
+    if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
+    if (player_eliminated[player]) return;
+    player_selected[player] = !player_selected[player];
+}
+
+void selection_set_single(int player)
+{
+    selection_clear();
+    if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
+    if (player_eliminated[player]) return;
+    player_selected[player] = true;
+}
+
+/* The single entry point for committing a life change as a game event:
+   log + clamp + elimination-undo action + elimination check. Any path
+   that applies life deltas (knob commit, All Damage) must use this so
+   the elimination machinery can't be bypassed. */
+void apply_life_delta(int player, int delta)
+{
+    if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
+    if (player_eliminated[player]) return;
+    damage_log_add(player, delta, LOG_EVT_LIFE, -1);
+    player_life[player] = clamp_life(player_life[player] + delta);
+    if (player_life[player] <= 0) {
+        set_player_elimination_action(player, LOG_EVT_LIFE, -1, delta);
+    }
+    check_player_elimination(player);
+}
+
 // ---------- life preview ----------
 void life_preview_commit_cb(lv_timer_t *timer)
 {
+    int track = nvs_get_players_to_track();
+    int i;
+
     (void)timer;
 
-    if (!life_preview_active ||
-        preview_player < 0 ||
-        preview_player >= nvs_get_players_to_track()) {
+    if (!life_preview_active || selection_count() == 0) {
+        pending_life_delta = 0;
+        life_preview_active = false;
         if (life_preview_timer != NULL) {
             lv_timer_pause(life_preview_timer);
         }
         return;
     }
 
-    damage_log_add(preview_player, pending_life_delta, LOG_EVT_LIFE, -1);
-    player_life[preview_player] = clamp_life(
-        player_life[preview_player] + pending_life_delta
-    );
-    if (player_life[preview_player] <= 0) {
-        set_player_elimination_action(preview_player, LOG_EVT_LIFE, -1, pending_life_delta);
+    for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
+        if (!player_selected[i]) continue;
+        apply_life_delta(i, pending_life_delta);
     }
-    check_player_elimination(preview_player);
     pending_life_delta = 0;
-    preview_player = -1;
     life_preview_active = false;
     if (life_preview_timer != NULL) {
         lv_timer_pause(life_preview_timer);
+    }
+    /* Applying a life change ends the operation: in multi-select mode clear
+       the selection so the next tap starts a fresh selection. Otherwise
+       sequential per-player damage keeps stacking players into the set. */
+    if (nvs_get_multi_select()) {
+        selection_clear();
+        select_kick_timer();
     }
     refresh_player_ui();
 }
@@ -437,6 +524,7 @@ void damage_apply(void)
     int source;
 
     if (selected_enemy < 0 || selected_enemy >= active_enemy_count) return;
+    if (cmd_damage_target < 0 || cmd_damage_target >= MAX_DISPLAY_PLAYERS) return;
 
     delta = enemies[selected_enemy].damage - damage_start_value;
     if (delta == 0) return;
@@ -461,34 +549,41 @@ void damage_cancel(void)
 
 void change_player_life(int delta)
 {
-    int preview_base;
+    /* The shared delta applies to every currently-selected player. Clamp it
+       to the headroom of the selected set so the previewed totals always
+       equal what the commit will store and overshoot detents at the life
+       cap are absorbed instead of accumulating. */
     int track = nvs_get_players_to_track();
+    int max_up = LIFE_MAX;
+    int min_down = LIFE_MIN;
+    int i;
 
-    if (selected_player < 0 || selected_player >= track) return;
-    if (player_eliminated[selected_player]) return;
+    /* The roulette walks the selection every tick, so a delta dialed
+       mid-spin would land on whichever player the wheel stops at. */
+    if (player_selection_animation_active()) return;
+
+    if (selection_count() == 0) return;
 
     select_kick_timer();
 
-    if (life_preview_active &&
-        preview_player != selected_player) {
-        life_preview_commit_cb(NULL);
+    for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
+        if (!player_selected[i] || player_eliminated[i]) continue;
+        if (LIFE_MAX - player_life[i] < max_up) max_up = LIFE_MAX - player_life[i];
+        if (LIFE_MIN - player_life[i] > min_down) min_down = LIFE_MIN - player_life[i];
     }
 
-    preview_player = selected_player;
-    preview_base = player_life[preview_player];
     pending_life_delta += delta;
-    pending_life_delta = clamp_life(preview_base + pending_life_delta) - preview_base;
+    if (pending_life_delta > max_up) pending_life_delta = max_up;
+    if (pending_life_delta < min_down) pending_life_delta = min_down;
     life_preview_active = (pending_life_delta != 0);
 
     if (life_preview_timer != NULL) {
-        lv_timer_reset(life_preview_timer);
-    }
-
-    if (!life_preview_active && life_preview_timer != NULL) {
-        lv_timer_pause(life_preview_timer);
-        preview_player = -1;
-    } else if (life_preview_timer != NULL) {
-        lv_timer_resume(life_preview_timer);
+        if (life_preview_active) {
+            lv_timer_reset(life_preview_timer);
+            lv_timer_resume(life_preview_timer);
+        } else {
+            lv_timer_pause(life_preview_timer);
+        }
     }
 
     refresh_player_ui();
@@ -563,8 +658,10 @@ void knob_life_reset(void)
     if (active_enemy_count < 0) active_enemy_count = 0;
     if (active_enemy_count > MAX_ENEMY_COUNT) active_enemy_count = MAX_ENEMY_COUNT;
 
+    damage_log_reset();
+
     pending_life_delta = 0;
-    preview_player = -1;
+    selection_clear();
     life_preview_active = false;
     selected_enemy = -1;
     dice_result = 0;
@@ -576,12 +673,13 @@ void knob_life_reset(void)
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         player_life[i] = starting_life;
     }
-    selected_player = -1;
     menu_player = 0;
     cmd_damage_target = -1;
     memset(cmd_damage_totals, 0, sizeof(cmd_damage_totals));
     memset(player_counters, 0, sizeof(player_counters));
     memset(player_eliminated, 0, sizeof(player_eliminated));
+    memset(player_manually_eliminated, 0, sizeof(player_manually_eliminated));
+    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) clear_player_elimination_action(i);
     all_damage_value = 0;
     counter_edit_type = COUNTER_TYPE_COMMANDER_TAX;
     counter_edit_value = 0;
@@ -619,6 +717,7 @@ void knob_life_init(void)
 static lv_timer_t *player_select_anim_timer = NULL;
 static int player_select_anim_steps = 0;
 static int player_select_anim_period = 0;
+static int roulette_idx = 0;
 
 static void player_select_anim_cb(lv_timer_t *timer)
 {
@@ -631,7 +730,12 @@ static void player_select_anim_cb(lv_timer_t *timer)
     }
 
     // Move to next player (clockwise logic mapping to bottom/left/top/right)
-    selected_player = (selected_player + 1) % track;
+    roulette_idx = (roulette_idx + 1) % track;
+    selection_set_single(roulette_idx);
+    /* Restart the deselect-timeout countdown like any selection change,
+       so a timer left running from before the reset can't fire mid-spin
+       and blank the selection for a tick. */
+    select_kick_timer();
     refresh_player_ui();
 
     player_select_anim_steps--;
@@ -652,6 +756,7 @@ void start_player_selection_animation(void)
     int random_stops;
 
     if (track <= 1) return;
+    if (!nvs_get_random_first()) return;
 
     if (player_select_anim_timer == NULL) {
         player_select_anim_timer = lv_timer_create(player_select_anim_cb, 50, NULL);
@@ -664,8 +769,24 @@ void start_player_selection_animation(void)
     player_select_anim_steps = random_stops;
     player_select_anim_period = 40; // start fast
 
-    if (selected_player < 0) selected_player = 0;
+    roulette_idx = 0;
+    selection_set_single(0);
+    select_kick_timer();
 
     lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
     lv_timer_resume(player_select_anim_timer);
+}
+
+void stop_player_selection_animation(void)
+{
+    player_select_anim_steps = 0;
+    if (player_select_anim_timer != NULL) {
+        lv_timer_del(player_select_anim_timer);
+        player_select_anim_timer = NULL;
+    }
+}
+
+bool player_selection_animation_active(void)
+{
+    return player_select_anim_timer != NULL && player_select_anim_steps > 0;
 }

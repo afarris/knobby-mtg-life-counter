@@ -14,6 +14,8 @@ static int cached_num_players = 4;
 static int cached_players_to_track = 1;
 static int cached_life_total = DEFAULT_LIFE_TOTAL;
 static int cached_auto_eliminate = 1; /* 1=ON (default), 0=OFF */
+static int cached_random_first = 1; /* 1=ON (default): random first-player pick on reset */
+static int cached_multi_select = 0; /* 0=OFF (default), 1=ON */
 static char cached_name_list[NAME_LIST_COUNT][NAME_LIST_LEN];
 
 // ---------- init ----------
@@ -54,11 +56,23 @@ void knob_nvs_init(void)
         cached_brightness = clamp_brightness(bri_val);
         cached_num_players = (np_val < 1) ? 1 : (np_val > MAX_GAME_PLAYERS) ? MAX_GAME_PLAYERS : np_val;
         cached_players_to_track = (pt_val < 1) ? 1 : (pt_val > MAX_DISPLAY_PLAYERS) ? MAX_DISPLAY_PLAYERS : pt_val;
-        cached_life_total = (lt_val < 0) ? 0 : (lt_val > LIFE_MAX) ? LIFE_MAX : lt_val;
+        /* Every consumer assumes track <= num_players; foreign/old NVS could
+           store an inconsistent pair that the per-field clamps above allow. */
+        if (cached_players_to_track > cached_num_players)
+            cached_players_to_track = cached_num_players;
+        cached_life_total = (lt_val < 1) ? 1 : (lt_val > LIFE_MAX) ? LIFE_MAX : lt_val;
 
         int8_t ae_val = 1;
         nvs_get_i8(handle, "auto_elim", &ae_val);
         cached_auto_eliminate = (ae_val != 0) ? 1 : 0;
+
+        int8_t rf_val = 1;
+        nvs_get_i8(handle, "rand_first", &rf_val);
+        cached_random_first = (rf_val != 0) ? 1 : 0;
+
+        int8_t ms_val = 0;
+        nvs_get_i8(handle, "multi_sel", &ms_val);
+        cached_multi_select = (ms_val != 0) ? 1 : 0;
 
         size_t nl_size = sizeof(cached_name_list);
         nvs_get_blob(handle, "name_list", cached_name_list, &nl_size);
@@ -158,7 +172,7 @@ int nvs_get_life_total(void)
 
 void nvs_set_life_total(int value)
 {
-    cached_life_total = (value < 0) ? 0 : (value > LIFE_MAX) ? LIFE_MAX : value;
+    cached_life_total = (value < 1) ? 1 : (value > LIFE_MAX) ? LIFE_MAX : value;
     settings_dirty = true;
 }
 
@@ -171,6 +185,30 @@ int nvs_get_auto_eliminate(void)
 void nvs_set_auto_eliminate(int value)
 {
     cached_auto_eliminate = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
+// ---------- random first-player pick ----------
+int nvs_get_random_first(void)
+{
+    return cached_random_first;
+}
+
+void nvs_set_random_first(int value)
+{
+    cached_random_first = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
+// ---------- multi-select ----------
+int nvs_get_multi_select(void)
+{
+    return cached_multi_select;
+}
+
+void nvs_set_multi_select(int value)
+{
+    cached_multi_select = (value != 0) ? 1 : 0;
     settings_dirty = true;
 }
 
@@ -201,9 +239,15 @@ void settings_save(void)
         nvs_set_i8(handle, "track", (int8_t)cached_players_to_track);
         nvs_set_i16(handle, "life_total", (int16_t)cached_life_total);
         nvs_set_i8(handle, "auto_elim", (int8_t)cached_auto_eliminate);
+        nvs_set_i8(handle, "rand_first", (int8_t)cached_random_first);
+        nvs_set_i8(handle, "multi_sel", (int8_t)cached_multi_select);
         nvs_set_blob(handle, "name_list", cached_name_list, sizeof(cached_name_list));
-        nvs_commit(handle);
+        esp_err_t commit_err = nvs_commit(handle);
         nvs_close(handle);
-        settings_dirty = false;
+        /* Keep the dirty flag set if the commit failed (e.g. NVS full) so a
+           later save retries instead of silently dropping the change. */
+        if (commit_err == ESP_OK) {
+            settings_dirty = false;
+        }
     }
 }

@@ -9,7 +9,6 @@ extern "C" {
 
 // ---------- state ----------
 extern int brightness_percent;
-extern int auto_dim_setting;
 extern bool dimmed;
 extern float battery_voltage;
 extern int battery_percent;

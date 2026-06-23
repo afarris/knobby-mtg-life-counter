@@ -33,6 +33,10 @@
 /*Enable more complex drawing routines to manage screens transparency.
  *Can be used if the UI is above another layer, e.g. an OSD menu or video player.
  *Requires `LV_COLOR_DEPTH = 32` colors and the screen's `bg_opa` should be set to non LV_OPA_COVER value*/
+/* Keep this 1. The depth-32 note above marks it unsupported at 16-bit, but on
+ * hardware setting it to 0 makes the 3-player pie-wedge child labels (P2/P3
+ * life + name) disappear — the masked full-screen wedge panels rely on this
+ * transparency draw path. Verified on device. Do not 'clean up' to 0. */
 #define LV_COLOR_SCREEN_TRANSP 1
 
 /* Adjust color mix functions rounding. GPUs might calculate color mix (blending) differently.

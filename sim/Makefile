@@ -29,7 +29,7 @@ endif
 CFLAGS    := -Wall -Wno-unused-function \
              -DLV_CONF_INCLUDE_SIMPLE -DSIMULATOR=1 \
              -I. -Iesp_stubs -I$(LVGL_PATH) -I$(LVGL_PATH)/src -I$(KNOBBY) -I$(KNOBBY)/src \
-             -O2 -g
+             -O2 -g -MMD -MP
 
 LDFLAGS   := -lm
 
@@ -40,7 +40,7 @@ GUI_LDFLAGS := $(SDL_LDFLAGS) $(LDFLAGS)
 # ---- Source files ----
 
 # Top-level knobby files
-KNOBBY_TOP_SRCS := $(KNOBBY)/knob.c
+KNOBBY_TOP_SRCS := $(KNOBBY)/knob.c $(KNOBBY)/board_pins.c
 
 # Source files in src/
 KNOBBY_SRC_SRCS := $(addprefix $(KNOBBY)/src/, \
@@ -118,3 +118,6 @@ GUI_ONLY_SRCS := $(filter-out $(ALL_SRCS),$(ALL_SRCS_GUI))
 
 $(foreach src,$(ALL_SRCS),$(eval $(call compile_rule,$(src))))
 $(foreach src,$(GUI_ONLY_SRCS),$(eval $(call gui_compile_rule,$(src))))
+
+# Auto-generated header dependencies (-MMD)
+-include $(wildcard $(BUILD)/*.d)

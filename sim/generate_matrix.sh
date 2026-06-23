@@ -3,7 +3,7 @@
 # Run from the sim/ directory: ./generate_matrix.sh
 set -e
 
-SIM=./knobby_sim
+SIM="${SIM:-./knobby_sim}"
 OUT=screenshots
 COUNT=0
 FILES=()
@@ -123,6 +123,19 @@ for track in 2 3 4; do
 done
 
 # ============================================================
+# 5b. Multi-select — multiple players selected together (knob hits all)
+# ============================================================
+shot "multiselect_2p_01.png"  --screen 2p --track 2 --multi-select 1 --selected-players 0,1
+shot "multiselect_3p_02.png"  --screen 3p --track 3 --multi-select 1 --selected-players 0,2
+shot "multiselect_4p_02.png"  --screen 4p --track 4 --multi-select 1 --selected-players 0,2
+shot "multiselect_4p_013.png" --screen 4p --track 4 --multi-select 1 --selected-players 0,1,3
+# Shared-delta preview across the selected set (damage and heal)
+shot "multiselect_4p_preview_neg.png" --screen 4p --track 4 --multi-select 1 \
+    --selected-players 0,1,2 --preview-delta -3 --life 20,30,40,15
+shot "multiselect_3p_preview_pos.png" --screen 3p --track 3 --multi-select 1 \
+    --selected-players 0,1,2 --preview-delta 5 --life 20,30,40
+
+# ============================================================
 # 6. Random counters — multiplayer × orientations + 1p
 # ============================================================
 shot "1p_counters.png" --screen 1p --random-counters --auto-eliminate 0
@@ -221,31 +234,50 @@ shot "color_menu.png" --screen color-menu --menu-player 0
 shot "color_picker.png" --screen color-picker --menu-player 0
 
 # ============================================================
-# 15. Settings pages with different toggle states
+# 15. Settings: every toggle in every state, page-agnostic.
+# "setting:<id>" makes the sim find whichever page hosts the item,
+# so this section never changes when settings move between pages.
 # ============================================================
 for dim in 0 1 2 3; do
     dim_name=("off" "15s" "30s" "60s")
-    shot "settings_menu_dim_${dim_name[$dim]}.png" --screen settings-menu --auto-dim "$dim"
+    shot "setting_autodim_${dim_name[$dim]}.png" --screen setting:autodim --auto-dim "$dim"
 done
 
 for cm in 0 1; do
     cm_name=("player" "life")
-    shot "settings_more_cm${cm_name[$cm]}.png" --screen settings-more --color-mode "$cm"
+    shot "setting_colormode_${cm_name[$cm]}.png" --screen setting:color-mode --color-mode "$cm"
 done
 
 for dt in 0 1 2 3; do
     dt_name=("never" "5s" "15s" "30s")
-    shot "settings_more_ds${dt_name[$dt]}.png" --screen settings-more --deselect "$dt"
+    shot "setting_deselect_${dt_name[$dt]}.png" --screen setting:deselect --deselect "$dt"
 done
 
 for rot in 0 1 2; do
     rot_name=("absolute" "centric" "tabletop")
-    shot "settings_more_orient_${rot_name[$rot]}.png" --screen settings-more --orientation "$rot"
+    shot "setting_orientation_${rot_name[$rot]}.png" --screen setting:orientation --orientation "$rot"
 done
 
+# Settings page 3 (gameplay toggles: auto-eliminate + multi-select)
 for ae in 0 1; do
-    ae_name=("aeoff" "aeon")
-    shot "settings_more_${ae_name[$ae]}.png" --screen settings-more --auto-eliminate "$ae"
+    ae_name=("off" "on")
+    shot "setting_autoelim_${ae_name[$ae]}.png" --screen setting:auto-eliminate --auto-eliminate "$ae"
+done
+
+for rf in 0 1; do
+    rf_name=("off" "on")
+    shot "setting_randomfirst_${rf_name[$rf]}.png" --screen setting:random-first --random-first "$rf"
+done
+
+for ms in 0 1; do
+    ms_name=("off" "on")
+    shot "setting_multiselect_${ms_name[$ms]}.png" --screen setting:multi-select --multi-select "$ms"
+done
+
+# All settings pages in their default state (count derived from the sim)
+NPAGES=$($SIM --print-settings-pages)
+for p in $(seq 1 "$NPAGES"); do
+    shot "settings_page${p}.png" --screen "settings-page${p}"
 done
 
 # ============================================================
@@ -257,8 +289,9 @@ shot "all_damage_random.png" --screen all-damage \
 # ============================================================
 # 15. Player-menu for random player
 # ============================================================
-shot "player_menu_p$((RANDOM % 4)).png" --screen player-menu \
-    --menu-player $((RANDOM % 4))
+mp=$((RANDOM % 4))
+shot "player_menu_p${mp}.png" --screen player-menu \
+    --menu-player "$mp"
 
 # ============================================================
 # 16. Battery at random legal voltage
@@ -284,7 +317,8 @@ done
 # ============================================================
 # 17. Dice with a result
 # ============================================================
-shot "dice_$((RANDOM % 20 + 1)).png" --screen dice --dice $((RANDOM % 20 + 1))
+d=$((RANDOM % 20 + 1))
+shot "dice_${d}.png" --screen dice --dice "$d"
 
 # ============================================================
 # 18. Event log with random data
@@ -307,7 +341,17 @@ shot "1p_timer_preview_p444.png" --screen 1p --track 1 \
     --random-counters
 
 # ============================================================
-# 20. Intro screen
+# 20. Menus, rename, counters-menu (previously uncovered)
+# ============================================================
+shot "menu_main.png" --screen menu
+shot "menu_tools.png" --screen tools
+shot "counters_menu.png" --screen counters-menu
+shot "rename.png" --screen rename
+shot "rename_longnames.png" --screen rename \
+    --names "Maximilian,Bartholomew,Christopher,Evangelina"
+
+# ============================================================
+# 21. Intro screen
 # ============================================================
 shot "intro.png" --screen intro
 
@@ -370,7 +414,7 @@ write_section() {
 
 # Sort files into sections
 SEC_1P_PREV=(); SEC_2P_PREV=(); SEC_3P_PREV=(); SEC_4P_PREV=()
-SEC_LIFE=(); SEC_LIFECOLOR=(); SEC_PERPLAYER=(); SEC_SELECTED=(); SEC_COUNTERS=()
+SEC_LIFE=(); SEC_LIFECOLOR=(); SEC_PERPLAYER=(); SEC_SELECTED=(); SEC_MULTISEL=(); SEC_COUNTERS=()
 SEC_BRIGHT=(); SEC_COUNTER_EDIT=(); SEC_DAMAGE=(); SEC_SETTINGS=()
 SEC_TIMER=()
 SEC_MANA=()
@@ -379,6 +423,7 @@ SEC_OTHER=()
 
 for f in "${FILES[@]}"; do
     case "$f" in
+        multiselect_*)        SEC_MULTISEL+=("$f") ;;
         lowbatt_*)            SEC_LOWBATT+=("$f") ;;
         1p_preview_*)         SEC_1P_PREV+=("$f") ;;
         2p_*_preview_*)       SEC_2P_PREV+=("$f") ;;
@@ -393,7 +438,7 @@ for f in "${FILES[@]}"; do
         brightness_*)         SEC_BRIGHT+=("$f") ;;
         counter_edit_*)       SEC_COUNTER_EDIT+=("$f") ;;
         damage_*|select_*|all_damage_*) SEC_DAMAGE+=("$f") ;;
-        settings_*)           SEC_SETTINGS+=("$f") ;;
+        settings_*|setting_*) SEC_SETTINGS+=("$f") ;;
         mana_*)               SEC_MANA+=("$f") ;;
         *)                    SEC_OTHER+=("$f") ;;
     esac
@@ -408,6 +453,7 @@ write_section "Life Totals (Player Colors)" "${SEC_LIFE[@]}"
 write_section "Life Totals (Life Colors)" "${SEC_LIFECOLOR[@]}"
 write_section "Life Totals (Per-Player Colors)" "${SEC_PERPLAYER[@]}"
 write_section "Selected Player" "${SEC_SELECTED[@]}"
+write_section "Multi-Select" "${SEC_MULTISEL[@]}"
 write_section "Player Counters" "${SEC_COUNTERS[@]}"
 write_section "Brightness" "${SEC_BRIGHT[@]}"
 write_section "Counter Edit" "${SEC_COUNTER_EDIT[@]}"

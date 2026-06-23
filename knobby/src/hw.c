@@ -17,7 +17,6 @@
 
 // ---------- state ----------
 int brightness_percent = DEFAULT_BRIGHTNESS_PERCENT;
-int auto_dim_setting = AUTO_DIM_OFF;
 bool dimmed = false;
 float battery_voltage = 0.0f;
 int battery_percent = -1;
@@ -231,8 +230,9 @@ static void auto_dim_timer_cb(lv_timer_t *timer)
     // dim state.  update_battery_measurement() has its own 60s throttle.
     update_battery_measurement(false);
 
-    if (auto_dim_setting == AUTO_DIM_OFF || dimmed) return;
-    uint32_t timeout = auto_dim_ms[auto_dim_setting];
+    int dim_setting = nvs_get_auto_dim();
+    if (dim_setting == AUTO_DIM_OFF || dimmed) return;
+    uint32_t timeout = auto_dim_ms[dim_setting];
     if (lv_tick_elaps(last_activity_tick) >= timeout) {
         dimmed = true;
         uint32_t duty = (uint32_t)((AUTO_DIM_BRIGHTNESS * BACKLIGHT_DUTY_MAX) / 100);
@@ -250,7 +250,6 @@ void knob_hw_init(void)
     knob_nvs_init();
     brightness_init();
     brightness_percent = nvs_get_brightness();
-    auto_dim_setting = nvs_get_auto_dim();
     last_activity_tick = lv_tick_get();
     auto_dim_timer = lv_timer_create(auto_dim_timer_cb, AUTO_DIM_CHECK_PERIOD_MS, NULL);
     battery_icon_timer = lv_timer_create(battery_icon_timer_cb, BATTERY_BLINK_PERIOD_MS, NULL);

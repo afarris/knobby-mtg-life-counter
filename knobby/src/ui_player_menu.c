@@ -181,8 +181,7 @@ static void event_all_damage_apply(lv_event_t *e) {
     if (i == menu_player && !include_myself) {
       continue;
     }
-    damage_log_add(i, -all_damage_value, LOG_EVT_LIFE, -1);
-    player_life[i] = clamp_life(player_life[i] - all_damage_value);
+    apply_life_delta(i, -all_damage_value);
   }
 
   refresh_player_ui();
@@ -215,6 +214,8 @@ static void event_menu_color(lv_event_t *e) {
 
 static void event_color_default(lv_event_t *e) {
   (void)e;
+  if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS)
+    return;
   player_has_override[menu_player] = false;
   player_life_color[menu_player] = false;
   refresh_player_ui();
@@ -223,6 +224,8 @@ static void event_color_default(lv_event_t *e) {
 
 static void event_color_life(lv_event_t *e) {
   (void)e;
+  if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS)
+    return;
   player_has_override[menu_player] = true;
   player_life_color[menu_player] = true;
   refresh_player_ui();
@@ -232,6 +235,8 @@ static void event_color_life(lv_event_t *e) {
 static void event_color_custom(lv_event_t *e) {
   char title_buf[32];
   (void)e;
+  if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS)
+    return;
   color_picker_index = player_color_index[menu_player];
   if (color_picker_title_label != NULL) {
     snprintf(title_buf, sizeof(title_buf), "%s\nColor",
@@ -265,6 +270,8 @@ void change_player_color(int delta) {
 }
 
 void commit_player_color(void) {
+  if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS)
+    return;
   player_has_override[menu_player] = true;
   player_color_index[menu_player] = color_picker_index;
   player_life_color[menu_player] = false;
@@ -333,7 +340,7 @@ void build_counter_menu_screen(void) {
       event_counter_poison,
       event_counter_experience,
   };
-  quad_item_t items[4];
+  quad_item_t items[4] = {{0}};
 
   for (i = 0; i < 4; i++) {
     const counter_definition_t *def = get_counter_definition(types[i]);

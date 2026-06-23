@@ -12,7 +12,6 @@ void rebuild_multiplayer_layout(int track);
 
 void refresh_multiplayer_ui(void);
 
-void open_multiplayer_screen(void);
 void select_kick_timer(void);
 
 #endif // _UI_MP_H

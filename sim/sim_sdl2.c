@@ -107,9 +107,14 @@ int main(int argc, char *argv[])
 {
     extern float sim_battery_voltage;
     int i;
+    int do_random_log = 0;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--battery-voltage") == 0 && i + 1 < argc) {
             sim_battery_voltage = (float)atof(argv[++i]);
+        } else if (strcmp(argv[i], "--random-log") == 0) {
+            do_random_log = 1;
+        } else {
+            fprintf(stderr, "GUI sim: ignoring unsupported option %s\n", argv[i]);
         }
     }
 
@@ -150,6 +155,7 @@ int main(int argc, char *argv[])
 
     // Set some defaults if needed
     nvs_set_players_to_track(4);
+    if (do_random_log) sim_populate_random_log();
     back_to_main();
 
     last_tick = SDL_GetTicks();
@@ -173,7 +179,6 @@ int main(int argc, char *argv[])
 static void handle_sdl_events(void)
 {
     SDL_Event event;
-    static int encoder_cont = 0;
 
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) {
@@ -182,19 +187,15 @@ static void handle_sdl_events(void)
             // Handled by sdl_mouse_read
         } else if (event.type == SDL_MOUSEWHEEL) {
             if (event.wheel.y > 0) {
-                encoder_cont++;
-                knob_change(KNOB_RIGHT, encoder_cont);
+                knob_change(KNOB_RIGHT);
             } else if (event.wheel.y < 0) {
-                encoder_cont--;
-                knob_change(KNOB_LEFT, encoder_cont);
+                knob_change(KNOB_LEFT);
             }
         } else if (event.type == SDL_KEYDOWN) {
             if (event.key.keysym.sym == SDLK_RIGHT) {
-                encoder_cont++;
-                knob_change(KNOB_RIGHT, encoder_cont);
+                knob_change(KNOB_RIGHT);
             } else if (event.key.keysym.sym == SDLK_LEFT) {
-                encoder_cont--;
-                knob_change(KNOB_LEFT, encoder_cont);
+                knob_change(KNOB_LEFT);
             } else if (event.key.keysym.sym == SDLK_UP) {
                 knob_notify_swipe_up();
             } else if (event.key.keysym.sym == SDLK_DOWN) {

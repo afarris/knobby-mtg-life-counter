@@ -218,7 +218,6 @@ static void style_select_entry(int i, int player_index)
         lv_obj_set_style_text_color(label_enemy_damage[i], text_color, 0);
         lv_obj_set_style_bg_color(select_rows[i], get_player_base_color(player_index), 0);
         lv_obj_set_style_bg_opa(select_rows[i], LV_OPA_COVER, 0);
-        lv_obj_clear_flag(select_rows[i], LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_flag(select_rows[i], LV_OBJ_FLAG_CLICKABLE);
     }
 

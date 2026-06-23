@@ -18,16 +18,24 @@
 #define CONFIG_KNOB_HIGH_LIMIT     1
 #define CONFIG_KNOB_LOW_LIMIT      1
 
+#define STAGE_BOUNCE_ROWS 72
+
 static lv_color_t *disp_draw_buf;
+/* PSRAM full-frame staging: rendered bands are assembled here and pushed
+   to the panel back-to-back at SPI speed on the frame's last band, so the
+   GRAM write is one fast wipe instead of a render-paced band-by-band
+   sweep. SPI DMA cannot read PSRAM directly on this stack, so the push
+   bounces through disp_draw_buf in synchronous chunks — safe because the
+   last band is already staged, leaving the render buffer unused until the
+   flush returns. NULL = staging unavailable, per-band pushes as before. */
+static lv_color_t *frame_stage;
+static int stage_dirty_y1;
+static int stage_dirty_y2;
 static lv_disp_draw_buf_t draw_buf;
 static lv_disp_drv_t disp_drv;
 static lv_indev_t *indev_touchpad;
-lv_indev_t *indev_knob;
 static ESP_PanelLcd *lcd = NULL;
 static ESP_PanelTouch *touch = NULL;
-static int32_t ctx_diff;
-static lv_indev_state_t encoder_state;
-int encoder_cont = 0;
 static volatile bool touch_irq_pending = false;
 #define USE_CUSTOM_INIT_CMD 0 // 是否用自定义的初始化代码
 
@@ -230,11 +238,51 @@ const esp_lcd_panel_vendor_init_cmd_t lcd_init_cmd[] = {
 static void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
 {
   ESP_PanelLcd *lcd = (ESP_PanelLcd *)disp->user_data;
-  const int offsetx1 = area->x1;
-  const int offsetx2 = area->x2;
-  const int offsety1 = area->y1;
-  const int offsety2 = area->y2;
-  lcd->drawBitmap(offsetx1, offsety1, offsetx2 - offsetx1 + 1, offsety2 - offsety1 + 1, (const uint8_t *)color_p);
+
+  if (frame_stage != NULL) {
+    const int w = area->x2 - area->x1 + 1;
+    int y;
+
+    for (y = area->y1; y <= area->y2; y++) {
+      memcpy(&frame_stage[y * SCREEN_RES_HOR + area->x1],
+             &color_p[(y - area->y1) * w], (size_t)w * sizeof(lv_color_t));
+    }
+    if (area->y1 < stage_dirty_y1) stage_dirty_y1 = area->y1;
+    if (area->y2 > stage_dirty_y2) stage_dirty_y2 = area->y2;
+
+    if (!lv_disp_flush_is_last(disp)) {
+      lv_disp_flush_ready(disp);
+      return;
+    }
+
+    /* Last band of the frame: push the dirty row range back-to-back via
+       the internal bounce buffer (synchronous chunks, ~15ms total), then
+       release LVGL. */
+    {
+      const int y1 = stage_dirty_y1;
+      const int y2 = stage_dirty_y2;
+      int cy;
+      stage_dirty_y1 = SCREEN_RES_VER;
+      stage_dirty_y2 = -1;
+      for (cy = y1; cy <= y2; cy += STAGE_BOUNCE_ROWS) {
+        int ch = y2 - cy + 1;
+        if (ch > STAGE_BOUNCE_ROWS) ch = STAGE_BOUNCE_ROWS;
+        memcpy(disp_draw_buf, &frame_stage[cy * SCREEN_RES_HOR],
+               (size_t)ch * SCREEN_RES_HOR * sizeof(lv_color_t));
+        lcd->drawBitmap(0, cy, SCREEN_RES_HOR, ch,
+                        (const uint8_t *)disp_draw_buf, 1000);
+      }
+      lv_disp_flush_ready(disp);
+    }
+    return;
+  }
+
+  if (!lcd->drawBitmap(area->x1, area->y1, area->x2 - area->x1 + 1,
+                       area->y2 - area->y1 + 1, (const uint8_t *)color_p)) {
+    /* No transfer was queued, so onRefreshFinishCallback will never fire to
+       release LVGL — release it here to avoid a permanent flush stall. */
+    lv_disp_flush_ready(disp);
+  }
 }
 
 IRAM_ATTR bool onRefreshFinishCallback(void *user_data)
@@ -244,49 +292,6 @@ IRAM_ATTR bool onRefreshFinishCallback(void *user_data)
   return false;
 }
 
-void setRotation(uint8_t rot)
-{
-  if (rot > 3)
-    return;
-  if (lcd == NULL || touch == NULL)
-    return;
-
-  switch (rot)
-  {
-  case 1: // 顺时针90度
-    lcd->swapXY(true);
-    lcd->mirrorX(true);
-    lcd->mirrorY(false);
-    touch->swapXY(true);
-    touch->mirrorX(true);
-    touch->mirrorY(false);
-    break;
-  case 2:
-    lcd->swapXY(false);
-    lcd->mirrorX(true);
-    lcd->mirrorY(true);
-    touch->swapXY(false);
-    touch->mirrorX(true);
-    touch->mirrorY(true);
-    break;
-  case 3:
-    lcd->swapXY(true);
-    lcd->mirrorX(false);
-    lcd->mirrorY(true);
-    touch->swapXY(true);
-    touch->mirrorX(false);
-    touch->mirrorY(true);
-    break;
-  default:
-    lcd->swapXY(false);
-    lcd->mirrorX(false);
-    lcd->mirrorY(false);
-    touch->swapXY(false);
-    touch->mirrorX(false);
-    touch->mirrorY(false);
-    break;
-  }
-}
 
 void scr_display_on(void)
 {
@@ -294,7 +299,6 @@ void scr_display_on(void)
 }
 
 static bool tp_tracking = false;
-static bool tp_swiped = false;
 static lv_point_t tp_start = {0, 0};
 static lv_point_t tp_last = {0, 0};
 static uint32_t tp_start_tick = 0;
@@ -312,7 +316,6 @@ static bool touch_point_valid(int x, int y)
 static void touch_reset_state(void)
 {
   tp_tracking = false;
-  tp_swiped = false;
   tp_start.x = 0;
   tp_start.y = 0;
   tp_last.x = 0;
@@ -356,8 +359,6 @@ static bool check_swipe(int cur_x, int cur_y)
   }
   lv_indev_reset(lv_indev_get_act(), NULL);
   return true;
-
-  return false;
 }
 
 static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
@@ -370,8 +371,10 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     return;
   }
 
-  int read_touch_result = tp->readPoints(&point, 1);
+  /* Clear before the (multi-ms) I2C read so a touch interrupt arriving
+     mid-read is preserved for the next poll instead of being lost. */
   touch_irq_pending = false;
+  int read_touch_result = tp->readPoints(&point, 1);
   if (read_touch_result > 0)
   {
     if (!touch_point_valid(point.x, point.y)) {
@@ -381,99 +384,52 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     }
 
     bool was_dimmed = activity_kick();
-    if (was_dimmed) {
+    if (was_dimmed || in_undim_grace()) {
+      /* The tap that wakes (or just woke) a dimmed screen must not also
+         click the widget under the finger; swallow the whole gesture for
+         the grace window, matching the swipe/encoder suppression. */
       touch_reset_state();
-    }
-    if (tp_swiped) {
       data->state = LV_INDEV_STATE_RELEASED;
+      return;
+    }
+    data->point.x = point.x;
+    data->point.y = point.y;
+    data->state = LV_INDEV_STATE_PRESSED;
+    if (!tp_tracking) {
+      tp_start.x = point.x;
+      tp_start.y = point.y;
+      tp_last = tp_start;
+      tp_start_tick = lv_tick_get();
+      tp_tracking = true;
     } else {
-      data->point.x = point.x;
-      data->point.y = point.y;
-      data->state = LV_INDEV_STATE_PRESSED;
-      if (!tp_tracking) {
-        tp_start.x = point.x;
-        tp_start.y = point.y;
-        tp_last = tp_start;
-        tp_start_tick = lv_tick_get();
-        tp_tracking = true;
-      } else {
-        tp_last.x = point.x;
-        tp_last.y = point.y;
-        knob_swipe_hint_update(tp_start.x, tp_start.y, point.x, point.y);
-      }
+      tp_last.x = point.x;
+      tp_last.y = point.y;
+      knob_swipe_hint_update(tp_start.x, tp_start.y, point.x, point.y);
     }
   }
   else
   {
-    if (tp_tracking && !tp_swiped && touch_point_valid(tp_last.x, tp_last.y)) {
-      tp_swiped = check_swipe(tp_last.x, tp_last.y);
+    if (tp_tracking && touch_point_valid(tp_last.x, tp_last.y)) {
+      check_swipe(tp_last.x, tp_last.y);
     }
     touch_reset_state();
     data->state = LV_INDEV_STATE_RELEASED;
   }
 }
 
-static int32_t _knob_calculate_diff(knob_handle_t knob, knob_event_t event)
-{
-   static int32_t last_v = 0;
-
-    int32_t diff = 0;
-    int32_t invd = iot_knob_get_count_value(knob);
-    knob_change(event,invd);       
-    if (last_v ^ invd) {
-
-        diff = (int32_t)((uint32_t)invd - (uint32_t)last_v);
-        diff += (event == KNOB_RIGHT && invd < last_v) ? 16 :
-                (event == KNOB_LEFT && invd > last_v) ? -16 : 0;
-        last_v = invd;
-    }
-
-    return diff;
-}
-
+/* Each detent enqueues one event onto the SPSC ring in knob.c; the main
+   loop drains it via knob_process_pending(). LVGL's encoder indev is not
+   used (no lv_group is attached), so there is no ctx_diff/knob_read path. */
 static void _knob_right_cb(void *arg, void *data)
 {
-    knob_handle_t knob = (knob_handle_t)arg;
-    // int32_t ctx = (int32_t )data;
-    int32_t diff = _knob_calculate_diff(knob,KNOB_RIGHT);
-    
-    
-    ctx_diff = (ctx_diff < 0)? diff : ctx_diff + diff;
-
+    (void)arg; (void)data;
+    knob_change(KNOB_RIGHT);
 }
 
 static void _knob_left_cb(void *arg, void *data)
 {
-    knob_handle_t knob = (knob_handle_t)arg;
-    // int32_t ctx = (int32_t )data; 
-    int32_t diff = _knob_calculate_diff(knob,KNOB_LEFT);
-    
-    ctx_diff = (ctx_diff > 0) ? ctx_diff : ctx_diff + diff;
-
-}
-
-
-
-static void knob_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
-{
-  knob_handle_t *knob = (knob_handle_t *)indev_drv -> user_data;
-  data->enc_diff = ctx_diff;
-  // data->state = (ctx_diff == 0) ? LV_INDEV_STATE_REL : LV_INDEV_STATE_PR;
-  data->state = LV_INDEV_STATE_REL;
-  // printf("ctx_diff = %d\r\n",ctx_diff);
-  ctx_diff = 0;
-  
-}
-
-static lv_indev_t *indev_knob_init(knob_handle_t *knob)
-{
-  assert(knob);
-  static lv_indev_drv_t indev_drv_knob;
-  lv_indev_drv_init(&indev_drv_knob);
-  indev_drv_knob.type = LV_INDEV_TYPE_ENCODER;
-  indev_drv_knob.read_cb = knob_read;
-  indev_drv_knob.user_data = (void *)knob;
-  return lv_indev_drv_register(&indev_drv_knob);
+    (void)arg; (void)data;
+    knob_change(KNOB_LEFT);
 }
 
 static lv_indev_t *indev_init(ESP_PanelTouch *tp)
@@ -554,9 +510,20 @@ void scr_lvgl_init()
     lcd->mirrorY(true);
     touch->mirrorY(true);
   }
-  size_t lv_cache_rows = 72;
+  size_t lv_cache_rows = STAGE_BOUNCE_ROWS;
 
-  disp_draw_buf = (lv_color_t *)heap_caps_malloc(lv_cache_rows * SCREEN_RES_HOR * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  disp_draw_buf = (lv_color_t *)heap_caps_malloc(lv_cache_rows * SCREEN_RES_HOR * sizeof(lv_color_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (disp_draw_buf == NULL) {
+    /* Every flush writes through this buffer; a NULL here would crash on the
+       first render. frame_stage has a fallback, but this one is mandatory. */
+    Serial.printf("FATAL: display draw buffer alloc failed\n");
+    while (1) { delay(1000); }
+  }
+  frame_stage = (lv_color_t *)heap_caps_malloc(
+      SCREEN_RES_VER * SCREEN_RES_HOR * sizeof(lv_color_t),
+      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  stage_dirty_y1 = SCREEN_RES_VER;
+  stage_dirty_y2 = -1;
   lv_init();
   lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, SCREEN_RES_HOR * lv_cache_rows);
 
@@ -585,10 +552,8 @@ void scr_lvgl_init()
         Serial.printf("knob create failed\n");
         return;
     }
-  iot_knob_register_cb(s_knob, KNOB_LEFT, _knob_left_cb, &ctx_diff);
-  iot_knob_register_cb(s_knob, KNOB_RIGHT, _knob_right_cb, &ctx_diff);
-  
-  indev_knob = indev_knob_init(&s_knob);
+  iot_knob_register_cb(s_knob, KNOB_LEFT, _knob_left_cb, NULL);
+  iot_knob_register_cb(s_knob, KNOB_RIGHT, _knob_right_cb, NULL);
 }
 
 #endif

@@ -28,10 +28,6 @@
 #define SCREEN_W 360
 #define SCREEN_H 360
 
-/* Globals normally defined in scr_st77916.h */
-lv_indev_t *indev_knob = NULL;
-int encoder_cont = 0;
-
 /* ---- Framebuffer ---- */
 static lv_color_t framebuffer[SCREEN_W * SCREEN_H];
 static lv_color_t draw_buf_data[SCREEN_W * 72];
@@ -49,10 +45,11 @@ static void sim_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *
     lv_disp_flush_ready(drv);
 }
 
-static void save_screenshot_png(const char *filename)
+static int save_screenshot_png(const char *filename)
 {
+    int ok = 1;
     uint8_t *rgb = malloc(SCREEN_W * SCREEN_H * 3);
-    if (!rgb) { fprintf(stderr, "Failed to allocate RGB buffer\n"); return; }
+    if (!rgb) { fprintf(stderr, "Failed to allocate RGB buffer\n"); return 0; }
 
     {
         const int cx = SCREEN_W / 2;
@@ -82,10 +79,12 @@ static void save_screenshot_png(const char *filename)
 
     if (!stbi_write_png(filename, SCREEN_W, SCREEN_H, 3, rgb, SCREEN_W * 3)) {
         fprintf(stderr, "Failed to write %s\n", filename);
+        ok = 0;
     } else {
         printf("Saved: %s\n", filename);
     }
     free(rgb);
+    return ok;
 }
 
 static void render_frame(void)
@@ -115,10 +114,9 @@ static void nav_4p(void)         { nvs_set_players_to_track(4); reset_all_values
 static void nav_intro(void)      { lv_scr_load(screen_intro); }
 static void nav_menu(void)       { open_quad_menu(); }
 static void nav_tools(void)      { lv_scr_load(screen_tools_menu); }
-static void nav_settings_menu(void) { lv_scr_load(screen_screen_settings_menu); }
-static void nav_settings_more(void) { lv_scr_load(screen_settings_page2); }
+static void nav_settings_menu(void) { lv_scr_load(settings_pages[0]); }
 static void nav_brightness(void) { open_settings_screen(); }
-static void nav_battery(void)    { update_battery_measurement(true); refresh_battery_ui(); lv_scr_load(screen_battery); }
+static void nav_battery(void)    { open_battery_screen(); }
 static void nav_dice(void)       { open_dice_screen(); }
 static void nav_damage_log(void) { open_damage_log_screen(); }
 static void nav_game_mode(void)  { open_game_mode_menu(); }
@@ -160,7 +158,6 @@ static const screen_entry_t all_screens[] = {
     {"menu",          nav_menu},
     {"tools",         nav_tools},
     {"settings-menu", nav_settings_menu},
-    {"settings-more", nav_settings_more},
     {"brightness",    nav_brightness},
     {"battery",       nav_battery},
     {"dice",          nav_dice},
@@ -180,6 +177,33 @@ static const screen_entry_t all_screens[] = {
     {NULL, NULL}
 };
 
+/* Settings screens resolved dynamically from the declarative table:
+   "settings-page<N>" (1-based) and "setting:<id>" (page hosting that item).
+   Returns 1 if it navigated, 0 if the name is not a settings form. */
+static int nav_dynamic_settings(const char *name)
+{
+    if (strncmp(name, "settings-page", 13) == 0) {
+        int p = atoi(name + 13);
+        if (p < 1 || p > settings_page_count) {
+            fprintf(stderr, "Settings page out of range: %s (pages: 1-%d)\n",
+                    name, settings_page_count);
+            exit(1);
+        }
+        lv_scr_load(settings_pages[p - 1]);
+        return 1;
+    }
+    if (strncmp(name, "setting:", 8) == 0) {
+        int p = settings_item_page(name + 8);
+        if (p < 0) {
+            fprintf(stderr, "Unknown setting id: %s\n", name + 8);
+            exit(1);
+        }
+        lv_scr_load(settings_pages[p]);
+        return 1;
+    }
+    return 0;
+}
+
 /* ---- Usage ---- */
 static void print_usage(void)
 {
@@ -193,9 +217,10 @@ static void print_usage(void)
            "  --life <p1,p2,...>     Set player life totals (default: starting-life for all)\n"
            "  --names <p1,p2,...>    Set player names (default: P1..P8)\n"
            "  --players <n>          Number of players in the game, 1-8 (default: 4)\n"
-           "  --track <n>            Players shown on screen, 1-4 (default: 4)\n"
+           "  --track <n>            Players shown on screen, 1-4 (default: 1)\n"
            "  --starting-life <n>    Starting/max life total (default: 40)\n"
            "  --selected <n>         Which player is selected, -1=none (default: -1)\n"
+           "  --selected-players <csv> Players selected together, e.g. 0,2 (multi-select set)\n"
            "\nLife preview (shows pending delta before commit):\n"
            "  --preview-delta <n>    Pending life change to display (e.g. +12, -5)\n"
            "  --preview-player <n>   Which player shows the preview, -1=1p mode (default: -1)\n"
@@ -208,6 +233,8 @@ static void print_usage(void)
            "  --auto-dim <n>         0=OFF, 1=15s, 2=30s, 3=60s (default: 0)\n"
            "  --deselect <n>         0=never, 1=5s, 2=15s, 3=30s (default: 0)\n"
            "  --auto-eliminate <n>   0=OFF, 1=ON (default: 1)\n"
+           "  --random-first <n>     0=OFF, 1=ON random first-player pick on reset (default: 1)\n"
+           "  --multi-select <n>     0=OFF, 1=ON (default: 0)\n"
            "\nSpecial state:\n"
            "  --dice <n>             Set dice roll result (1-20)\n"
            "  --counter-type <n>     Counter type for counter-edit: 0=cmd tax, 1=partner tax,\n"
@@ -229,14 +256,18 @@ static void print_usage(void)
            "  --turn-elapsed <ms>    Elapsed game time in milliseconds\n"
            "\n  --help, -h             Show this message\n"
            "\nAvailable screens:\n"
-           "  main 1p 2p 3p 4p intro menu tools settings-menu settings-more\n"
+           "  main 1p 2p 3p 4p intro menu tools settings-menu\n"
+           "  settings-page<N>       Settings page N (1-based)\n"
+           "  setting:<id>           Page hosting a setting (e.g. setting:autodim)\n"
            "  brightness battery dice damage-log game-mode custom-life select\n"
            "  damage player-menu rename all-damage counters-menu counter-edit\n"
-           "  color-menu color-picker mana\n");
+           "  color-menu color-picker mana\n"
+           "\nIntrospection:\n"
+           "  --print-settings-pages Print the number of settings pages and exit\n");
 }
 
 /* ---- CSV helpers ---- */
-static void parse_csv_ints(const char *csv, int *out, int max_count)
+static int parse_csv_ints(const char *csv, int *out, int max_count)
 {
     char buf[256];
     char *tok;
@@ -247,6 +278,7 @@ static void parse_csv_ints(const char *csv, int *out, int max_count)
         out[i++] = atoi(tok);
         tok = strtok(NULL, ",");
     }
+    return i;
 }
 
 static void parse_csv_strings(const char *csv, char names[][16], int max_count)
@@ -272,22 +304,7 @@ static void populate_random_counters(void)
             player_counters[p][t] = rand() % 100;
 }
 
-static void populate_random_log(void)
-{
-    int i;
-    const uint8_t event_types[] = {LOG_EVT_LIFE, LOG_EVT_CMD_DAMAGE, LOG_EVT_COUNTER};
-    for (i = 0; i < 15; i++) {
-        int player = rand() % 4;
-        int delta = (rand() % 20) - 10;
-        uint8_t evt = event_types[rand() % 3];
-        int source = -1;
-        if (delta == 0) delta = 1;
-        if (evt == LOG_EVT_CMD_DAMAGE) source = (player + 1) % 4;
-        else if (evt == LOG_EVT_COUNTER) { source = rand() % COUNTER_TYPE_COUNT; if (delta < 0) delta = -delta; }
-        sim_tick_advance(5000 + (uint32_t)(rand() % 30000));
-        damage_log_add(player, delta, evt, source);
-    }
-}
+/* random-log fixture lives in sim_stubs.c (shared with the SDL sim) */
 
 /* ---- Main ---- */
 int main(int argc, char *argv[])
@@ -296,11 +313,14 @@ int main(int argc, char *argv[])
     const char *outdir = "screenshots";
     const char *output_filename = NULL;
     int life_values[MAX_DISPLAY_PLAYERS] = {0};
+    int life_count = 0;
     int life_set = 0;
     char name_values[MAX_GAME_PLAYERS][16] = {{0}};
     int names_set = 0;
     int selected_val = -1;
     int selected_set = 0;
+    int selected_players_values[MAX_DISPLAY_PLAYERS] = {-1, -1, -1, -1};
+    int selected_players_set = 0;
     int preview_delta = 0;
     int preview_delta_set = 0;
     int arg_preview_player = -1;
@@ -339,11 +359,15 @@ int main(int argc, char *argv[])
 
     srand((unsigned int)time(NULL));
 
+    int print_settings_pages = 0;
+
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--screen") == 0 && i + 1 < argc) {
             screen_name = argv[++i];
+        } else if (strcmp(argv[i], "--print-settings-pages") == 0) {
+            print_settings_pages = 1;
         } else if (strcmp(argv[i], "--life") == 0 && i + 1 < argc) {
-            parse_csv_ints(argv[++i], life_values, MAX_DISPLAY_PLAYERS);
+            life_count = parse_csv_ints(argv[++i], life_values, MAX_DISPLAY_PLAYERS);
             life_set = 1;
         } else if (strcmp(argv[i], "--names") == 0 && i + 1 < argc) {
             parse_csv_strings(argv[++i], name_values, MAX_GAME_PLAYERS);
@@ -357,6 +381,13 @@ int main(int argc, char *argv[])
         } else if (strcmp(argv[i], "--selected") == 0 && i + 1 < argc) {
             selected_val = atoi(argv[++i]);
             selected_set = 1;
+        } else if (strcmp(argv[i], "--random-first") == 0 && i + 1 < argc) {
+            sim_nvs_preset_i8("rand_first", (int8_t)atoi(argv[++i]));
+        } else if (strcmp(argv[i], "--selected-players") == 0 && i + 1 < argc) {
+            parse_csv_ints(argv[++i], selected_players_values, MAX_DISPLAY_PLAYERS);
+            selected_players_set = 1;
+        } else if (strcmp(argv[i], "--multi-select") == 0 && i + 1 < argc) {
+            sim_nvs_preset_i8("multi_sel", (int8_t)atoi(argv[++i]));
         } else if (strcmp(argv[i], "--preview-delta") == 0 && i + 1 < argc) {
             preview_delta = atoi(argv[++i]);
             preview_delta_set = 1;
@@ -449,10 +480,17 @@ int main(int argc, char *argv[])
 
     knob_gui();
 
+    if (print_settings_pages) {
+        printf("%d\n", settings_page_count);
+        return 0;
+    }
+
     /* Apply RAM-only overrides after navigation */
     #define APPLY_RAM_OVERRIDES() do { \
         if (life_set) { \
-            for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) \
+            /* only override the players the CSV named; a short CSV must \
+               not zero (and auto-eliminate) the rest */ \
+            for (i = 0; i < life_count && i < MAX_DISPLAY_PLAYERS; i++) \
                 player_life[i] = life_values[i]; \
         } \
         if (names_set) { \
@@ -461,14 +499,24 @@ int main(int argc, char *argv[])
                     snprintf(player_names[i], sizeof(player_names[i]), "%s", name_values[i]); \
             } \
         } \
-        if (selected_set) \
-            selected_player = selected_val; \
+        if (selected_players_set) { \
+            int j; \
+            selection_clear(); \
+            for (j = 0; j < MAX_DISPLAY_PLAYERS; j++) { \
+                int p = selected_players_values[j]; \
+                if (p >= 0 && p < MAX_DISPLAY_PLAYERS) \
+                    player_selected[p] = true; \
+            } \
+        } else if (selected_set) { \
+            selection_set_single(selected_val); \
+        } \
         if (preview_delta_set) { \
-            if (arg_preview_player < 0) arg_preview_player = 0; \
-            preview_player = arg_preview_player; \
+            if (!selected_players_set && !selected_set) { \
+                if (arg_preview_player < 0) arg_preview_player = 0; \
+                selection_set_single(arg_preview_player); \
+            } \
             pending_life_delta = preview_delta; \
             life_preview_active = true; \
-            selected_player = arg_preview_player; \
         } \
         if (brightness_set) { \
             brightness_percent = brightness_val; \
@@ -507,7 +555,7 @@ int main(int argc, char *argv[])
         if (do_random_counters) \
             populate_random_counters(); \
         if (do_random_log) { \
-            populate_random_log(); \
+            sim_populate_random_log(); \
             open_damage_log_screen(); \
         } \
         if (turn_number_set) { \
@@ -544,20 +592,16 @@ int main(int argc, char *argv[])
 
     {
         const screen_entry_t *entry;
-        int found = 0;
-        for (entry = all_screens; entry->name != NULL; entry++) {
-            if (strcmp(entry->name, screen_name) == 0) {
-                char path[512];
-                entry->navigate();
-                APPLY_RAM_OVERRIDES();
-                render_frame();
-                if (output_filename)
-                    snprintf(path, sizeof(path), "%s/%s", outdir, output_filename);
-                else
-                    snprintf(path, sizeof(path), "%s/%s.png", outdir, screen_name);
-                save_screenshot_png(path);
-                found = 1;
-                break;
+        char path[512];
+        int found = nav_dynamic_settings(screen_name);
+
+        if (!found) {
+            for (entry = all_screens; entry->name != NULL; entry++) {
+                if (strcmp(entry->name, screen_name) == 0) {
+                    entry->navigate();
+                    found = 1;
+                    break;
+                }
             }
         }
         if (!found) {
@@ -565,6 +609,21 @@ int main(int argc, char *argv[])
             print_usage();
             return 1;
         }
+        /* reset_all_values() (called by the nav_* helpers) kicks off the
+           "pick first player" roulette animation, whose timer would keep
+           reassigning the selection while render_frame() advances time.
+           Stop it and clear the resulting selection so screenshots are
+           deterministic; APPLY_RAM_OVERRIDES then sets any requested state. */
+        stop_player_selection_animation();
+        selection_clear();
+        APPLY_RAM_OVERRIDES();
+        render_frame();
+        if (output_filename)
+            snprintf(path, sizeof(path), "%s/%s", outdir, output_filename);
+        else
+            snprintf(path, sizeof(path), "%s/%s.png", outdir, screen_name);
+        if (!save_screenshot_png(path))
+            return 1;
     }
 
     return 0;

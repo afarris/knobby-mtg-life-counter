@@ -63,7 +63,7 @@ void open_game_mode_menu(void)
 void change_custom_life(int delta)
 {
     temp_life_total += delta;
-    if (temp_life_total < 0) temp_life_total = 0;
+    if (temp_life_total < 1) temp_life_total = 1;
     if (temp_life_total > LIFE_MAX) temp_life_total = LIFE_MAX;
     refresh_custom_life_ui();
 }

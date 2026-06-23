@@ -27,27 +27,7 @@ void sim_tick_advance(uint32_t ms)
 
 /* ---- Board detection ---- */
 
-const board_pins_t board_k518 = {
-    .name       = "JC3636K518",
-    .tft_blk    = 47,  .tft_rst  = 21,  .tft_cs  = 14,  .tft_sck = 13,
-    .tft_sda0   = 15,  .tft_sda1 = 16,  .tft_sda2 = 17, .tft_sda3 = 18,
-    .touch_scl  = 12,  .touch_sda = 11, .touch_int = 9,  .touch_rst = 10,
-    .enc_a      = 8,   .enc_b    = 7,
-    .bat_adc    = 1,
-    .btn        = 0,
-    .mirror_x   = false, .mirror_y = false,
-};
-
-const board_pins_t board_k718 = {
-    .name       = "JC3636K718",
-    .tft_blk    = 21,  .tft_rst  = 17,  .tft_cs  = 12,  .tft_sck = 11,
-    .tft_sda0   = 13,  .tft_sda1 = 14,  .tft_sda2 = 15, .tft_sda3 = 16,
-    .touch_scl  = 10,  .touch_sda = 9,  .touch_int = 7,  .touch_rst = 8,
-    .enc_a      = 2,   .enc_b    = 1,
-    .bat_adc    = 6,
-    .btn        = 0,
-    .mirror_x   = true,  .mirror_y = true,
-};
+/* Pin tables come from knobby/board_pins.c (shared with firmware). */
 
 const board_pins_t *board = NULL;
 
@@ -203,7 +183,6 @@ knob_handle_t iot_knob_create(const knob_config_t *config)
     return (knob_handle_t)1; /* non-NULL dummy */
 }
 
-esp_err_t iot_knob_delete(knob_handle_t h) { (void)h; return ESP_OK; }
 esp_err_t iot_knob_register_cb(knob_handle_t h, knob_event_t e, knob_cb_t cb, void *d)
 {
     (void)h; (void)e; (void)cb; (void)d;
@@ -232,3 +211,28 @@ void scr_display_on(void) { /* no-op in simulator */ }
 /* ---- Random ---- */
 
 uint32_t esp_random(void) { return (uint32_t)rand(); }
+
+/* ---- Shared test fixtures ---- */
+
+/* Populate the event log with random entries (shared by the headless
+   and SDL mains so --random-log behaves the same in both). */
+#include "damage_log.h"
+#include "game.h"
+
+void sim_populate_random_log(void)
+{
+    int i;
+    const uint8_t event_types[] = {LOG_EVT_LIFE, LOG_EVT_CMD_DAMAGE, LOG_EVT_COUNTER};
+    /* > LOG_PAGE_SIZE (32) so screenshots exercise the paginated render */
+    for (i = 0; i < 40; i++) {
+        int player = rand() % 4;
+        int delta = (rand() % 20) - 10;
+        uint8_t evt = event_types[rand() % 3];
+        int source = -1;
+        if (delta == 0) delta = 1;
+        if (evt == LOG_EVT_CMD_DAMAGE) source = (player + 1) % 4;
+        else if (evt == LOG_EVT_COUNTER) { source = rand() % COUNTER_TYPE_COUNT; if (delta < 0) delta = -delta; }
+        sim_tick_advance(5000 + (uint32_t)(rand() % 30000));
+        damage_log_add(player, delta, evt, source);
+    }
+}
