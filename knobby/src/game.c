@@ -303,20 +303,6 @@ lv_color_t get_effective_player_color(int player_i, int color_i, int vibrancy)
     return get_player_color_vib(color_i, vibrancy);
 }
 
-int get_main_player_index(void)
-{
-    int num = nvs_get_num_players();
-    int i;
-
-    for (i = 0; i < num; i++) {
-        if (strcmp(player_names[i], "m") == 0) {
-            return i;
-        }
-    }
-
-    return -1;
-}
-
 int get_cmd_target_player_index(int row)
 {
     int skip_player;
@@ -329,11 +315,11 @@ int get_cmd_target_player_index(int row)
     if (cmd_damage_target >= 0) {
         skip_player = cmd_damage_target;
     } else {
-        skip_player = get_main_player_index();
-    }
-
-    if (skip_player < 0) {
-        return row;
+        /* No explicit target — only hidden-screen repaints and the
+           sim's direct navigation reach this (every live flow sets
+           cmd_damage_target first): map as if the owner, player 0,
+           were the target, so the enemy rows show players 1..n-1. */
+        skip_player = 0;
     }
 
     for (i = 0; i < num; i++) {
