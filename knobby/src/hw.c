@@ -1,5 +1,6 @@
 #include "hw.h"
 #include "storage.h"
+#include "net_sync.h"
 #include "driver/ledc.h"
 #include "esp_sleep.h"
 
@@ -100,6 +101,12 @@ static void check_low_battery_cutoff(void)
 
 void knob_enter_deep_sleep(void)
 {
+    /* Deep sleep with the WiFi driver live violates the IDF sleep
+       contract (and this path is reachable while Table Sync is on).
+       The wake is a full reboot, so the game is left for good — a
+       recharged device rejoins via the in-game Invite. */
+    net_sync_leave_game();
+
     // Turn off backlight
     ledc_set_duty(BACKLIGHT_LEDC_MODE, BACKLIGHT_LEDC_CHANNEL, 0);
     ledc_update_duty(BACKLIGHT_LEDC_MODE, BACKLIGHT_LEDC_CHANNEL);
