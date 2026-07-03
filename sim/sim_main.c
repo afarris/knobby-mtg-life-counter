@@ -117,6 +117,7 @@ static void nav_tools(void)      { lv_scr_load(screen_tools_menu); }
 static void nav_settings_menu(void) { lv_scr_load(settings_pages[0]); }
 static void nav_brightness(void) { open_settings_screen(); }
 static void nav_battery(void)    { open_battery_screen(); }
+static void nav_table_sync(void) { open_table_sync_screen(); }
 static void nav_dice(void)       { open_dice_screen(); }
 static void nav_damage_log(void) { open_damage_log_screen(); }
 static void nav_game_mode(void)  { open_game_mode_menu(); }
@@ -160,6 +161,7 @@ static const screen_entry_t all_screens[] = {
     {"settings-menu", nav_settings_menu},
     {"brightness",    nav_brightness},
     {"battery",       nav_battery},
+    {"table-sync",    nav_table_sync},
     {"dice",          nav_dice},
     {"damage-log",    nav_damage_log},
     {"game-mode",     nav_game_mode},
@@ -235,6 +237,8 @@ static void print_usage(void)
            "  --auto-eliminate <n>   0=OFF, 1=ON (default: 1)\n"
            "  --random-first <n>     0=OFF, 1=ON random first-player pick on reset (default: 1)\n"
            "  --multi-select <n>     0=OFF, 1=ON (default: 0)\n"
+           "  --table-sync <n>       0=OFF, 1=ON ESP-NOW table sync (default: 0)\n"
+           "  --table-session <n>    Table sync game session ID, 0=none (default: 0)\n"
            "\nSpecial state:\n"
            "  --dice <n>             Set dice roll result (1-20)\n"
            "  --counter-type <n>     Counter type for counter-edit: 0=cmd tax, 1=partner tax,\n"
@@ -388,6 +392,10 @@ int main(int argc, char *argv[])
             selected_players_set = 1;
         } else if (strcmp(argv[i], "--multi-select") == 0 && i + 1 < argc) {
             sim_nvs_preset_i8("multi_sel", (int8_t)atoi(argv[++i]));
+        } else if (strcmp(argv[i], "--table-sync") == 0 && i + 1 < argc) {
+            sim_nvs_preset_i8("net_sync", (int8_t)atoi(argv[++i]));
+        } else if (strcmp(argv[i], "--table-session") == 0 && i + 1 < argc) {
+            sim_nvs_preset_u32("net_sessn", (uint32_t)strtoul(argv[++i], NULL, 10));
         } else if (strcmp(argv[i], "--preview-delta") == 0 && i + 1 < argc) {
             preview_delta = atoi(argv[++i]);
             preview_delta_set = 1;

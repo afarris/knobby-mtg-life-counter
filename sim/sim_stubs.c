@@ -87,6 +87,12 @@ void sim_nvs_preset_i16(const char *key, int16_t value)
     if (e) { e->int_value = value; e->has_int = 1; }
 }
 
+void sim_nvs_preset_u32(const char *key, uint32_t value)
+{
+    nvs_entry_t *e = nvs_find_or_create(key);
+    if (e) { e->int_value = value; e->has_int = 1; }
+}
+
 /* NVS API stubs */
 
 esp_err_t nvs_flash_init(void) { return ESP_OK; }
@@ -211,6 +217,57 @@ void scr_display_on(void) { /* no-op in simulator */ }
 /* ---- Random ---- */
 
 uint32_t esp_random(void) { return (uint32_t)rand(); }
+
+/* ---- Table Sync ---- */
+
+/* Radio bridges implemented by knobby/knobby_net.cpp on firmware; the
+   simulator has no radio. Firmware sessions are RAM-only, so the fake
+   session lives in the sim's NVS store purely as a screenshot fixture:
+   --table-sync / --table-session preset it, and Start/Join/Leave behave
+   sensibly in the interactive sim (Join succeeds immediately — there is
+   no table to join). */
+#include "net_sync.h"
+
+static int64_t sim_nvs_value(const char *key)
+{
+    nvs_entry_t *e = nvs_find(key);
+    return (e && e->has_int) ? e->int_value : 0;
+}
+
+void net_sync_send_state(void) {}
+void net_sync_send_names(void) {}
+void net_sync_send_reply(void) {}
+
+int net_sync_start_game(void)
+{
+    sim_nvs_preset_i8("net_sync", 1);
+    sim_nvs_preset_u32("net_sessn", (esp_random() % 9999u) + 1u);
+    return 1;
+}
+
+int net_sync_join_game(void)
+{
+    return net_sync_start_game();
+}
+
+void net_sync_leave_game(void)
+{
+    sim_nvs_preset_i8("net_sync", 0);
+    sim_nvs_preset_u32("net_sessn", 0);
+}
+
+int net_sync_status(void)
+{
+    if (sim_nvs_value("net_sync") && sim_nvs_value("net_sessn") != 0)
+        return NET_SYNC_IN_GAME;
+    return NET_SYNC_OFF;
+}
+
+int net_sync_code(void)
+{
+    uint32_t id = (uint32_t)sim_nvs_value("net_sessn");
+    return (id != 0) ? (int)(id % 10000u) : -1;
+}
 
 /* ---- Shared test fixtures ---- */
 

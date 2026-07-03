@@ -2,6 +2,7 @@
 #include "storage.h"
 #include "settings.h"
 #include "ui_mp.h"
+#include "net_sync.h"
 
 // Forward declarations
 extern void reset_all_values(void);
@@ -118,6 +119,13 @@ static void event_gm_life_custom(lv_event_t *e)
 static void event_gm_apply(lv_event_t *e)
 {
     (void)e;
+    /* Applying game mode redefines the game (players, view, starting
+       life), and settings don't sync — so rather than broadcasting a
+       reset at THIS device's config over the whole table, leave the
+       session before the reset below can reach it. Same-config new
+       games use the shared reset; config changes re-pair. (No-op when
+       not synced.) */
+    net_sync_leave_game();
     nvs_set_num_players(temp_num_players);
     nvs_set_players_to_track(temp_players_to_track);
     nvs_set_life_total(temp_life_total);

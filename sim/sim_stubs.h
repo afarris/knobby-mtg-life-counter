@@ -14,6 +14,7 @@ void sim_populate_random_log(void);
  * This lets CLI flags control settings that knob_nvs.c reads at init. */
 void sim_nvs_preset_i8(const char *key, int8_t value);
 void sim_nvs_preset_i16(const char *key, int16_t value);
+void sim_nvs_preset_u32(const char *key, uint32_t value);
 
 /* Controllable battery voltage for screenshots */
 extern float sim_battery_voltage;

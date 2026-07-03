@@ -274,6 +274,10 @@ for ms in 0 1; do
     shot "setting_multiselect_${ms_name[$ms]}.png" --screen setting:multi-select --multi-select "$ms"
 done
 
+shot "setting_tablesync_off.png"    --screen table-sync --track 4
+shot "setting_tablesync_ingame.png" --screen table-sync --track 4 --table-sync 1 --table-session 14242
+shot "setting_tablesync_1p.png"     --screen table-sync
+
 # All settings pages in their default state (count derived from the sim)
 NPAGES=$($SIM --print-settings-pages)
 for p in $(seq 1 "$NPAGES"); do

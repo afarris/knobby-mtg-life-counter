@@ -4,6 +4,7 @@
 #include "ui_1p.h"
 #include "game.h"
 #include "storage.h"
+#include "net_sync.h"
 #include <string.h>
 
 // ---------- screens ----------
@@ -99,8 +100,15 @@ static void rename_all_advance(void)
 // ---------- apply + return ----------
 static void apply_name_and_return(const char *name)
 {
-    snprintf(player_names[menu_player],
-             sizeof(player_names[menu_player]), "%s", name);
+    /* Unchanged name (e.g. the "keep current" row, where name aliases
+       the destination buffer): skip the write — snprintf with
+       overlapping src/dst is UB — and the broadcast, so a no-op
+       re-apply can't win a version tie against a real remote rename. */
+    if (strcmp(player_names[menu_player], name) != 0) {
+        snprintf(player_names[menu_player],
+                 sizeof(player_names[menu_player]), "%s", name);
+        net_sync_commit_names();
+    }
     if (!is_default_name(name))
         mru_use_name(name);
     refresh_multiplayer_ui();
@@ -129,6 +137,7 @@ static void event_name_save(lv_event_t *e)
         snprintf(player_names[menu_player],
                  sizeof(player_names[menu_player]),
                  "P%d", menu_player + 1);
+        net_sync_commit_names();
         refresh_multiplayer_ui();
         if (rename_all_active) {
             rename_all_advance();

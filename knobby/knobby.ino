@@ -10,6 +10,7 @@
 #include "hal/lv_hal.h"
 #include "knob.h"
 #include "src/hw.h"
+#include "knobby_net.h"
 
 static const float BATTERY_DIVIDER_RATIO = 2.0f;
 static const float BATTERY_CALIBRATION_SCALE = 1.0f;
@@ -98,6 +99,9 @@ void setup()
   scr_lvgl_init();
   knob_gui();
 
+  // Table Sync sessions are RAM-only: every boot starts with the radio
+  // fully deinitialized until the user starts or joins a game.
+
   // Keep RTC8M clock alive during light sleep so LEDC PWM (backlight) continues
   esp_sleep_pd_config(ESP_PD_DOMAIN_RTC8M, ESP_PD_OPTION_ON);
   gpio_sleep_sel_dis((gpio_num_t)TFT_BLK);
@@ -112,6 +116,10 @@ void setup()
 // Minimum idle interval before using light sleep.
 // Below this threshold we fall back to vTaskDelay to avoid sleep/wake overhead.
 #define ACTIVE_SLEEP_MIN_MS 10U
+
+// Longest idle delay while Table Sync is on, so queued remote packets are
+// applied promptly even when LVGL has no timer due for a while.
+#define NET_SYNC_IDLE_MAX_MS 20U
 
 // Detect active USB host by checking if the SOF frame counter is advancing.
 // USB hosts send Start-of-Frame every 1ms; a changing counter means plugged in.
@@ -129,9 +137,12 @@ void loop()
   uint32_t time_till_next;
 
   knob_process_pending();
+  knobby_net_process();
   time_till_next = lv_timer_handler();
 
-  if (time_till_next >= ACTIVE_SLEEP_MIN_MS && !usb_host_active()) {
+  // Light sleep powers down the modem and would drop ESP-NOW packets, so
+  // Table Sync keeps the CPU on capped vTaskDelay idles instead.
+  if (time_till_next >= ACTIVE_SLEEP_MIN_MS && !usb_host_active() && !knobby_net_active()) {
     uint8_t level_a = gpio_get_level((gpio_num_t)ROTARY_ENC_PIN_A);
     uint8_t level_b = gpio_get_level((gpio_num_t)ROTARY_ENC_PIN_B);
     gpio_wakeup_enable((gpio_num_t)ROTARY_ENC_PIN_A, level_a ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL);
@@ -143,6 +154,8 @@ void loop()
   } else {
     gpio_wakeup_disable((gpio_num_t)ROTARY_ENC_PIN_A);
     gpio_wakeup_disable((gpio_num_t)ROTARY_ENC_PIN_B);
+    if (knobby_net_active() && time_till_next > NET_SYNC_IDLE_MAX_MS)
+      time_till_next = NET_SYNC_IDLE_MAX_MS;
     vTaskDelay(pdMS_TO_TICKS(time_till_next));
   }
 }

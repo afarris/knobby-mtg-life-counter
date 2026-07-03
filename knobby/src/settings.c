@@ -9,6 +9,7 @@
 #include "rename.h"
 #include "game.h"
 #include "mana.h"
+#include "net_sync.h"
 
 // Forward declarations for cross-module calls
 extern void reset_all_values(void);
@@ -282,6 +283,123 @@ static void multi_select_set(int v)
     }
 }
 
+// ---------- table sync screen ----------
+lv_obj_t *screen_table_sync = NULL;
+static lv_obj_t *table_sync_action_lbl; /* Start <-> Invite quadrant */
+static lv_obj_t *table_sync_status_lbl; /* status tile */
+static lv_timer_t *table_sync_timer;
+static bool table_sync_radio_error;
+
+void refresh_table_sync_ui(void)
+{
+    static char status_buf[24];
+    int status = net_sync_status();
+    int code = net_sync_code();
+
+    switch (status) {
+        case NET_SYNC_JOINING:
+            snprintf(status_buf, sizeof(status_buf), "Joining...");
+            break;
+        case NET_SYNC_HOSTING:
+            snprintf(status_buf, sizeof(status_buf), "Inviting\n#%04d", code);
+            break;
+        case NET_SYNC_IN_GAME:
+            snprintf(status_buf, sizeof(status_buf), "In Game\n#%04d", code);
+            break;
+        default:
+            /* Sync is mirror-mode: a 1p view can't represent the shared
+               game, so pairing refuses below and the tile says why. */
+            if (nvs_get_players_to_track() <= 1)
+                snprintf(status_buf, sizeof(status_buf), "1P View:\nNo Sync");
+            else
+                snprintf(status_buf, sizeof(status_buf),
+                         table_sync_radio_error ? "Radio\nError" : "Sync Off");
+            break;
+    }
+    lv_label_set_text(table_sync_status_lbl, status_buf);
+    /* In a game the host action re-opens the invite window for the same
+       session (late joiners, rebooted devices) instead of re-keying. */
+    lv_label_set_text(table_sync_action_lbl,
+        (status == NET_SYNC_HOSTING || status == NET_SYNC_IN_GAME)
+            ? "Hold to\nInvite" : "Hold to\nStart");
+}
+
+static void event_table_sync_start(lv_event_t *e)
+{
+    (void)e;
+    if (nvs_get_players_to_track() <= 1) return;
+    table_sync_radio_error = !net_sync_start_game();
+    refresh_table_sync_ui();
+}
+
+static void event_table_sync_join(lv_event_t *e)
+{
+    (void)e;
+    if (nvs_get_players_to_track() <= 1) return;
+    table_sync_radio_error = !net_sync_join_game();
+    refresh_table_sync_ui();
+}
+
+static void event_table_sync_leave(lv_event_t *e)
+{
+    (void)e;
+    net_sync_leave_game();
+    table_sync_radio_error = false;
+    refresh_table_sync_ui();
+}
+
+/* Pairing runs in the background (invite window, join listening), so the
+   status tile has to track it while the screen is up. The timer pauses
+   itself when the user navigates away and is resumed on open. */
+static void table_sync_timer_cb(lv_timer_t *timer)
+{
+    if (lv_scr_act() != screen_table_sync) {
+        lv_timer_pause(timer);
+        return;
+    }
+    refresh_table_sync_ui();
+}
+
+void open_table_sync_screen(void)
+{
+    refresh_table_sync_ui();
+    lv_timer_resume(table_sync_timer);
+    lv_scr_load(screen_table_sync);
+}
+
+void build_table_sync_screen(void)
+{
+    quad_item_t items[4];
+
+    /* All three actions are destructive to a live game (Start opens or
+       re-invites, Join drops the current session, Leave exits), so they
+       require a long press. */
+    memset(items, 0, sizeof(items));
+    items[0].label = "Hold to\nStart";
+    items[0].cb = event_table_sync_start;
+    items[0].enabled = true;
+    items[0].event = LV_EVENT_LONG_PRESSED;
+    items[1].label = "Hold to\nJoin";
+    items[1].cb = event_table_sync_join;
+    items[1].enabled = true;
+    items[1].event = LV_EVENT_LONG_PRESSED;
+    items[2].label = "Hold to\nLeave";
+    items[2].cb = event_table_sync_leave;
+    items[2].enabled = true;
+    items[2].event = LV_EVENT_LONG_PRESSED;
+    items[3].label = "Sync Off"; /* status tile, refreshed live */
+    items[3].enabled = false;
+    items[3].event = LV_EVENT_CLICKED;
+
+    build_quad_screen(&screen_table_sync, items);
+    table_sync_action_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_table_sync, 0), 0);
+    table_sync_status_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_table_sync, 3), 0);
+    table_sync_timer = lv_timer_create(table_sync_timer_cb, 500, NULL);
+    lv_timer_pause(table_sync_timer);
+}
+
 static const setting_item_t settings_items[] = {
     { .id = "brightness",     .fixed_label = "Brightness", .navigate = open_settings_screen, .nav_screen = &screen_settings },
     { .id = "autodim",        .label = autodim_label,          .color = autodim_color,     .get = autodim_get,              .set = autodim_set,              .count = AUTO_DIM_COUNT },
@@ -292,6 +410,7 @@ static const setting_item_t settings_items[] = {
     { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
     { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
     { .id = "multi-select",   .label = multi_select_label,     .color = toggle_color,      .get = nvs_get_multi_select,     .set = multi_select_set,         .count = 2 },
+    { .id = "table-sync",     .fixed_label = "Table Sync\n(Experimental)", .navigate = open_table_sync_screen, .nav_screen = &screen_table_sync },
 };
 #define SETTINGS_ITEM_COUNT ((int)(sizeof(settings_items) / sizeof(settings_items[0])))
 #define MAX_SETTINGS_PAGES  ((SETTINGS_ITEM_COUNT + 2) / 3)
