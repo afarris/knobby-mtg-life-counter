@@ -19,6 +19,8 @@ int nvs_get_orientation(void);
 void nvs_set_orientation(int value);
 int nvs_get_display_rotation(void);
 void nvs_set_display_rotation(int value);
+int nvs_get_menu_facing(void);
+void nvs_set_menu_facing(int value);
 
 int nvs_get_num_players(void);
 void nvs_set_num_players(int value);

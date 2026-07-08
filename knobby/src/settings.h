@@ -53,6 +53,7 @@ void open_settings_screen(void);
 void open_battery_screen(void);
 void open_rotate_screen(void);
 void change_display_rotation(int dir);
+void menu_facing_refresh(void);
 void open_table_sync_screen(void);
 
 #endif // _SETTINGS_H

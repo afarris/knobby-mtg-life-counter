@@ -11,6 +11,7 @@ static int cached_color_mode = 0;
 static int cached_deselect_timeout = 0; /* index: 0=never, 1=5s, 2=15s, 3=30s */
 static int cached_orientation = ORIENTATION_MODE_ABSOLUTE;
 static int cached_display_rotation = 0; /* physical rotation, degrees = value * 90 */
+static int cached_menu_facing = 0; /* 0=Fixed (default), 1=Face Player */
 static int cached_num_players = 4;
 static int cached_players_to_track = 1;
 static int cached_life_total = DEFAULT_LIFE_TOTAL;
@@ -77,6 +78,10 @@ void knob_nvs_init(void)
         int8_t ms_val = 0;
         nvs_get_i8(handle, "multi_sel", &ms_val);
         cached_multi_select = (ms_val != 0) ? 1 : 0;
+
+        int8_t mf_val = 0;
+        nvs_get_i8(handle, "menu_face", &mf_val);
+        cached_menu_facing = (mf_val != 0) ? 1 : 0;
 
         size_t nl_size = sizeof(cached_name_list);
         nvs_get_blob(handle, "name_list", cached_name_list, &nl_size);
@@ -154,6 +159,18 @@ int nvs_get_display_rotation(void)
 void nvs_set_display_rotation(int value)
 {
     cached_display_rotation = (value < 0 || value >= DISPLAY_ROTATION_COUNT) ? 0 : value;
+    settings_dirty = true;
+}
+
+// ---------- menu facing ----------
+int nvs_get_menu_facing(void)
+{
+    return cached_menu_facing;
+}
+
+void nvs_set_menu_facing(int value)
+{
+    cached_menu_facing = (value != 0) ? 1 : 0;
     settings_dirty = true;
 }
 
@@ -257,6 +274,7 @@ void settings_save(void)
         nvs_set_i8(handle, "auto_elim", (int8_t)cached_auto_eliminate);
         nvs_set_i8(handle, "rand_first", (int8_t)cached_random_first);
         nvs_set_i8(handle, "multi_sel", (int8_t)cached_multi_select);
+        nvs_set_i8(handle, "menu_face", (int8_t)cached_menu_facing);
         nvs_set_blob(handle, "name_list", cached_name_list, sizeof(cached_name_list));
         esp_err_t commit_err = nvs_commit(handle);
         nvs_close(handle);

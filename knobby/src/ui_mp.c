@@ -326,6 +326,30 @@ static const mp_layout_spec_t *get_layout(int track)
     return &layout_4p;
 }
 
+/* Snap a player's seat angle to upright-or-flipped (display-rotation step
+   0 or 2) so menus can face them via the hardware rotation. Exact for
+   tabletop (only 0/180 there); centric's diagonal seats flip like tabletop
+   — top-half seats 180, bottom-half upright — since sideways (90/270)
+   menus read as weird rather than helpful. 0 in absolute mode,
+   single-player, or for a player without a panel. */
+int mp_player_seat_rotation(int player)
+{
+    int track = nvs_get_players_to_track();
+    int mode = nvs_get_orientation();
+    const mp_layout_spec_t *layout;
+    int i;
+
+    if (track < 2 || mode == ORIENTATION_MODE_ABSOLUTE) return 0;
+    layout = get_layout(track);
+    for (i = 0; i < layout->panel_count; i++) {
+        if (layout->panels[i].player_index == player) {
+            int16_t angle = layout->angle_fn(mode, i); /* 0.1-degree units */
+            return ((angle + 900) / 1800 * 2) & 3;
+        }
+    }
+    return 0;
+}
+
 /* ---------- per-panel refresh ---------- */
 static void refresh_counter_rows(const mp_panel_spec_t *spec, int16_t wedge_bis,
                                  lv_obj_t *panel, lv_obj_t **rows, lv_obj_t **value_labels,

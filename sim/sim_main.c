@@ -241,6 +241,7 @@ static void print_usage(void)
            "  --player-override <csv> Per-player override flags, e.g. 0,1,0,0\n"
            "  --orientation <n>      0=absolute, 1=centric, 2=tabletop (default: 0)\n"
            "  --display-rotation <n> Physical rotation: 0=0°, 1=90°, 2=180°, 3=270° (default: 0)\n"
+           "  --menu-facing <n>      0=menus fixed, 1=player menus face the acting player (default: 0)\n"
            "  --brightness <n>       Brightness percent 1-100 (default: 30)\n"
            "  --auto-dim <n>         0=OFF, 1=15s, 2=30s, 3=60s (default: 0)\n"
            "  --deselect <n>         0=never, 1=5s, 2=15s, 3=30s (default: 0)\n"
@@ -417,6 +418,8 @@ int main(int argc, char *argv[])
             sim_nvs_preset_i8("rotation", (int8_t)atoi(argv[++i]));
         } else if (strcmp(argv[i], "--display-rotation") == 0 && i + 1 < argc) {
             sim_nvs_preset_i8("disp_rot", (int8_t)atoi(argv[++i]));
+        } else if (strcmp(argv[i], "--menu-facing") == 0 && i + 1 < argc) {
+            sim_nvs_preset_i8("menu_face", (int8_t)atoi(argv[++i]));
         } else if (strcmp(argv[i], "--brightness") == 0 && i + 1 < argc) {
             brightness_val = atoi(argv[++i]);
             brightness_set = 1;
@@ -563,6 +566,7 @@ int main(int argc, char *argv[])
         } \
         if (menu_player_set) { \
             menu_player = menu_player_val; \
+            menu_facing_refresh(); \
         } \
         if (player_colors_set) { \
             for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) \

@@ -10,6 +10,8 @@
 #include "game.h"
 #include "mana.h"
 #include "net_sync.h"
+#include "ui_mp.h"
+#include "ui_player_menu.h"
 
 // Forward declarations for cross-module calls
 extern void reset_all_values(void);
@@ -284,8 +286,38 @@ void change_display_rotation(int dir)
     int v = (nvs_get_display_rotation() +
              (dir > 0 ? 1 : DISPLAY_ROTATION_COUNT - 1)) % DISPLAY_ROTATION_COUNT;
     nvs_set_display_rotation(v);
-    display_apply_rotation(v);
     refresh_rotate_ui();
+    menu_facing_refresh();
+}
+
+/* Player-scoped menu screens that should face the acting player when
+   menu facing is enabled. */
+static bool screen_is_player_menu(lv_obj_t *screen)
+{
+    return screen == screen_player_menu ||
+           screen == screen_eliminated_player_menu ||
+           screen == screen_player_all_damage ||
+           screen == screen_counter_menu ||
+           screen == screen_counter_edit ||
+           screen == screen_player_color_menu ||
+           screen == screen_player_color_picker ||
+           screen == screen_player_name;
+}
+
+/* Single applier for the effective display rotation: the user's physical
+   rotation, plus the acting player's seat on player menus when the
+   "Menus: Face Player" toggle is on. Idempotent — recomputes from the
+   active screen, so any navigation path can call it safely. */
+void menu_facing_refresh(void)
+{
+    static int applied = -1;
+    int target = nvs_get_display_rotation();
+
+    if (nvs_get_menu_facing() && screen_is_player_menu(lv_scr_act()))
+        target = (target + mp_player_seat_rotation(menu_player)) & 3;
+    if (target == applied) return;
+    applied = target;
+    display_apply_rotation(target);
     /* Repaint the whole frame immediately: the panel's GRAM still holds the
        old orientation the instant the MADCTL flags change. */
     lv_obj_invalidate(lv_scr_act());
@@ -295,6 +327,11 @@ void change_display_rotation(int dir)
 static const char *random_first_label(int val)
 {
     return val ? "Random\nFirst\nON" : "Random\nFirst\nOFF";
+}
+
+static const char *menu_facing_label(int val)
+{
+    return val ? "Menus\nFace\nPlayer" : "Menus\nFixed";
 }
 
 static const char *multi_select_label(int val)
@@ -441,6 +478,7 @@ static const setting_item_t settings_items[] = {
     { .id = "multi-select",   .label = multi_select_label,     .color = toggle_color,      .get = nvs_get_multi_select,     .set = multi_select_set,         .count = 2 },
     { .id = "table-sync",     .fixed_label = "Table Sync\n(Experimental)", .navigate = open_table_sync_screen, .nav_screen = &screen_table_sync },
     { .id = "rotate",         .fixed_label = "Rotate\nScreen", .navigate = open_rotate_screen, .nav_screen = &screen_rotate },
+    { .id = "menu-facing",    .label = menu_facing_label,      .color = toggle_color,      .get = nvs_get_menu_facing,      .set = nvs_set_menu_facing,      .count = 2 },
 };
 #define SETTINGS_ITEM_COUNT ((int)(sizeof(settings_items) / sizeof(settings_items[0])))
 #define MAX_SETTINGS_PAGES  ((SETTINGS_ITEM_COUNT + 2) / 3)

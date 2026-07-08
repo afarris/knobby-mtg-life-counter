@@ -384,6 +384,34 @@ void reset_all_values(void)
 }
 
 
+/* Recompute the effective display rotation whenever a player-scoped menu
+   screen loads or unloads, so menus can face the acting player (menu
+   facing setting). The callback is idempotent; hooking both events covers
+   every navigation path in and out. */
+static void menu_facing_screen_event(lv_event_t *e)
+{
+    (void)e;
+    menu_facing_refresh();
+}
+
+static void menu_facing_hook_screens(void)
+{
+    lv_obj_t *scoped[] = {
+        screen_player_menu, screen_eliminated_player_menu,
+        screen_player_all_damage, screen_counter_menu, screen_counter_edit,
+        screen_player_color_menu, screen_player_color_picker,
+        screen_player_name,
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(scoped) / sizeof(scoped[0]); i++) {
+        lv_obj_add_event_cb(scoped[i], menu_facing_screen_event,
+                            LV_EVENT_SCREEN_LOADED, NULL);
+        lv_obj_add_event_cb(scoped[i], menu_facing_screen_event,
+                            LV_EVENT_SCREEN_UNLOADED, NULL);
+    }
+}
+
 // ---------- init ----------
 void knob_gui(void)
 {
@@ -418,6 +446,7 @@ void knob_gui(void)
     build_quad_menus();
     build_game_mode_menu_screen();
     build_custom_life_screen();
+    menu_facing_hook_screens();
 
     refresh_main_ui();
     refresh_multiplayer_ui();
