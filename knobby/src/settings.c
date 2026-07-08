@@ -20,6 +20,7 @@ lv_obj_t *screen_quad_menu = NULL;
 lv_obj_t *screen_tools_menu = NULL;
 lv_obj_t *screen_settings = NULL;
 lv_obj_t *screen_battery = NULL;
+lv_obj_t *screen_rotate = NULL;
 
 // ---------- widgets ----------
 static lv_obj_t *arc_brightness = NULL;
@@ -27,6 +28,7 @@ static lv_obj_t *label_settings_value = NULL;
 static lv_obj_t *label_settings_hint = NULL;
 static lv_obj_t *label_settings_battery = NULL;
 static lv_obj_t *label_settings_battery_detail = NULL;
+static lv_obj_t *label_rotate_value = NULL;
 
 // ---------- quadrant menu builder ----------
 void build_quad_screen(lv_obj_t **screen, quad_item_t items[4])
@@ -130,6 +132,14 @@ void refresh_battery_ui(void)
         snprintf(detail_buf, sizeof(detail_buf), "%.2fV calibrated", battery_voltage);
         lv_label_set_text(label_settings_battery_detail, detail_buf);
     }
+}
+
+void refresh_rotate_ui(void)
+{
+    char buf[16];
+    if (label_rotate_value == NULL) return;
+    snprintf(buf, sizeof(buf), "%d°", nvs_get_display_rotation() * 90);
+    lv_label_set_text(label_rotate_value, buf);
 }
 
 // ---------- navigation ----------
@@ -261,6 +271,25 @@ void open_battery_screen(void)
     update_battery_measurement(true);
     refresh_battery_ui();
     lv_scr_load(screen_battery);
+}
+
+void open_rotate_screen(void)
+{
+    refresh_rotate_ui();
+    lv_scr_load(screen_rotate);
+}
+
+void change_display_rotation(int dir)
+{
+    int v = (nvs_get_display_rotation() +
+             (dir > 0 ? 1 : DISPLAY_ROTATION_COUNT - 1)) % DISPLAY_ROTATION_COUNT;
+    nvs_set_display_rotation(v);
+    display_apply_rotation(v);
+    refresh_rotate_ui();
+    /* Repaint the whole frame immediately: the panel's GRAM still holds the
+       old orientation the instant the MADCTL flags change. */
+    lv_obj_invalidate(lv_scr_act());
+    lv_refr_now(NULL);
 }
 
 static const char *random_first_label(int val)
@@ -411,6 +440,7 @@ static const setting_item_t settings_items[] = {
     { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
     { .id = "multi-select",   .label = multi_select_label,     .color = toggle_color,      .get = nvs_get_multi_select,     .set = multi_select_set,         .count = 2 },
     { .id = "table-sync",     .fixed_label = "Table Sync\n(Experimental)", .navigate = open_table_sync_screen, .nav_screen = &screen_table_sync },
+    { .id = "rotate",         .fixed_label = "Rotate\nScreen", .navigate = open_rotate_screen, .nav_screen = &screen_rotate },
 };
 #define SETTINGS_ITEM_COUNT ((int)(sizeof(settings_items) / sizeof(settings_items[0])))
 #define MAX_SETTINGS_PAGES  ((SETTINGS_ITEM_COUNT + 2) / 3)
@@ -502,7 +532,7 @@ bool settings_handle_back(lv_obj_t *screen)
 
     for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
         if (settings_items[i].nav_screen != NULL && screen == *settings_items[i].nav_screen) {
-            if (screen == screen_settings) settings_save();
+            if (screen == screen_settings || screen == screen_rotate) settings_save();
             lv_scr_load(settings_pages[setting_page_of[i]]);
             return true;
         }
@@ -635,4 +665,31 @@ void build_battery_screen(void)
     lv_obj_set_style_text_color(label_settings_battery_detail, lv_color_hex(0x7A7A7A), 0);
     lv_obj_set_style_text_font(label_settings_battery_detail, &lv_font_montserrat_16, 0);
     lv_obj_align(label_settings_battery_detail, LV_ALIGN_CENTER, 0, 30);
+}
+
+void build_rotate_screen(void)
+{
+    screen_rotate = lv_obj_create(NULL);
+    lv_obj_set_size(screen_rotate, 360, 360);
+    lv_obj_set_style_bg_color(screen_rotate, lv_color_black(), 0);
+    lv_obj_set_style_border_width(screen_rotate, 0, 0);
+    lv_obj_set_scrollbar_mode(screen_rotate, LV_SCROLLBAR_MODE_OFF);
+
+    lv_obj_t *title = lv_label_create(screen_rotate);
+    lv_label_set_text(title, "Rotate Screen");
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 60);
+
+    label_rotate_value = lv_label_create(screen_rotate);
+    lv_label_set_text(label_rotate_value, "0°");
+    lv_obj_set_style_text_color(label_rotate_value, lv_color_white(), 0);
+    lv_obj_set_style_text_font(label_rotate_value, &lv_font_montserrat_32, 0);
+    lv_obj_align(label_rotate_value, LV_ALIGN_CENTER, 0, -10);
+
+    lv_obj_t *hint = lv_label_create(screen_rotate);
+    lv_label_set_text(hint, "Turn knob to rotate");
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x6A6A6A), 0);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+    lv_obj_align(hint, LV_ALIGN_CENTER, 0, 40);
 }

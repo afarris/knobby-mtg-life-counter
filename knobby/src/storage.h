@@ -17,6 +17,8 @@ int nvs_get_deselect_timeout(void);
 void nvs_set_deselect_timeout(int value);
 int nvs_get_orientation(void);
 void nvs_set_orientation(int value);
+int nvs_get_display_rotation(void);
+void nvs_set_display_rotation(int value);
 
 int nvs_get_num_players(void);
 void nvs_set_num_players(int value);

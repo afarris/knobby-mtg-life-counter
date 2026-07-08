@@ -10,6 +10,7 @@ static int cached_auto_dim = AUTO_DIM_OFF;
 static int cached_color_mode = 0;
 static int cached_deselect_timeout = 0; /* index: 0=never, 1=5s, 2=15s, 3=30s */
 static int cached_orientation = ORIENTATION_MODE_ABSOLUTE;
+static int cached_display_rotation = 0; /* physical rotation, degrees = value * 90 */
 static int cached_num_players = 4;
 static int cached_players_to_track = 1;
 static int cached_life_total = DEFAULT_LIFE_TOTAL;
@@ -34,6 +35,7 @@ void knob_nvs_init(void)
         int8_t lc_val = 0;
         int8_t dt_val = 0;
         int8_t rot_val = 0;
+        int8_t dr_val = 0;
         int8_t np_val = 4;
         int8_t pt_val = 1;
         int16_t lt_val = DEFAULT_LIFE_TOTAL;
@@ -43,6 +45,7 @@ void knob_nvs_init(void)
         nvs_get_i8(handle, "color_mode", &lc_val);
         nvs_get_i8(handle, "desel_time", &dt_val);
         nvs_get_i8(handle, "rotation", &rot_val);
+        nvs_get_i8(handle, "disp_rot", &dr_val);
         nvs_get_i8(handle, "num_players", &np_val);
         nvs_get_i8(handle, "track", &pt_val);
         nvs_get_i16(handle, "life_total", &lt_val);
@@ -53,6 +56,7 @@ void knob_nvs_init(void)
         cached_orientation = (rot_val < 0) ? ORIENTATION_MODE_ABSOLUTE
                 : (rot_val >= ORIENTATION_MODE_COUNT) ? ORIENTATION_MODE_ABSOLUTE
                                    : rot_val;
+        cached_display_rotation = (dr_val < 0 || dr_val >= DISPLAY_ROTATION_COUNT) ? 0 : dr_val;
         cached_brightness = clamp_brightness(bri_val);
         cached_num_players = (np_val < 1) ? 1 : (np_val > MAX_GAME_PLAYERS) ? MAX_GAME_PLAYERS : np_val;
         cached_players_to_track = (pt_val < 1) ? 1 : (pt_val > MAX_DISPLAY_PLAYERS) ? MAX_DISPLAY_PLAYERS : pt_val;
@@ -139,6 +143,17 @@ void nvs_set_orientation(int value)
     cached_orientation = (value < 0) ? ORIENTATION_MODE_ABSOLUTE
                                       : (value >= ORIENTATION_MODE_COUNT) ? ORIENTATION_MODE_ABSOLUTE
                                                                        : value;
+    settings_dirty = true;
+}
+
+int nvs_get_display_rotation(void)
+{
+    return cached_display_rotation;
+}
+
+void nvs_set_display_rotation(int value)
+{
+    cached_display_rotation = (value < 0 || value >= DISPLAY_ROTATION_COUNT) ? 0 : value;
     settings_dirty = true;
 }
 
@@ -235,6 +250,7 @@ void settings_save(void)
         nvs_set_i8(handle, "color_mode", (int8_t)cached_color_mode);
         nvs_set_i8(handle, "desel_time", (int8_t)cached_deselect_timeout);
         nvs_set_i8(handle, "rotation", (int8_t)cached_orientation);
+        nvs_set_i8(handle, "disp_rot", (int8_t)cached_display_rotation);
         nvs_set_i8(handle, "num_players", (int8_t)cached_num_players);
         nvs_set_i8(handle, "track", (int8_t)cached_players_to_track);
         nvs_set_i16(handle, "life_total", (int16_t)cached_life_total);

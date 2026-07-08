@@ -388,6 +388,7 @@ void reset_all_values(void)
 void knob_gui(void)
 {
     knob_hw_init();
+    display_apply_rotation(nvs_get_display_rotation());
     ensure_swipe_hint();
 
     build_intro_screen();
@@ -411,6 +412,7 @@ void knob_gui(void)
     build_mana_screen();
     build_settings_screen();
     build_battery_screen();
+    build_rotate_screen();
     build_table_sync_screen();
     build_damage_log_screen();
     build_quad_menus();
@@ -458,6 +460,11 @@ static void handle_knob_event(knob_event_t k)
         if (k == KNOB_LEFT)      change_brightness(-1);
         else if (k == KNOB_RIGHT) change_brightness(+1);
         refresh_settings_ui();
+    }
+    else if (lv_scr_act() == screen_rotate)
+    {
+        if (k == KNOB_LEFT)      change_display_rotation(-1);
+        else if (k == KNOB_RIGHT) change_display_rotation(+1);
     }
     else if (lv_scr_act() == screen_multiplayer)
     {
