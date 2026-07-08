@@ -46,6 +46,7 @@ void refresh_rotate_ui(void);
 void refresh_table_sync_ui(void);
 
 bool settings_handle_back(lv_obj_t *screen);
+bool settings_knob_page(int dir);
 int settings_item_page(const char *id);
 
 void open_quad_menu(void);
