@@ -384,10 +384,39 @@ void reset_all_values(void)
 }
 
 
+/* Recompute the effective display rotation whenever a player-scoped menu
+   screen loads or unloads, so menus can face the acting player (menu
+   facing setting). The callback is idempotent; hooking both events covers
+   every navigation path in and out. */
+static void menu_facing_screen_event(lv_event_t *e)
+{
+    (void)e;
+    menu_facing_refresh();
+}
+
+static void menu_facing_hook_screens(void)
+{
+    lv_obj_t *scoped[] = {
+        screen_player_menu, screen_eliminated_player_menu,
+        screen_player_all_damage, screen_counter_menu, screen_counter_edit,
+        screen_player_color_menu, screen_player_color_picker,
+        screen_player_name,
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(scoped) / sizeof(scoped[0]); i++) {
+        lv_obj_add_event_cb(scoped[i], menu_facing_screen_event,
+                            LV_EVENT_SCREEN_LOADED, NULL);
+        lv_obj_add_event_cb(scoped[i], menu_facing_screen_event,
+                            LV_EVENT_SCREEN_UNLOADED, NULL);
+    }
+}
+
 // ---------- init ----------
 void knob_gui(void)
 {
     knob_hw_init();
+    display_apply_rotation(nvs_get_display_rotation());
     ensure_swipe_hint();
 
     build_intro_screen();
@@ -411,11 +440,13 @@ void knob_gui(void)
     build_mana_screen();
     build_settings_screen();
     build_battery_screen();
+    build_rotate_screen();
     build_table_sync_screen();
     build_damage_log_screen();
     build_quad_menus();
     build_game_mode_menu_screen();
     build_custom_life_screen();
+    menu_facing_hook_screens();
 
     refresh_main_ui();
     refresh_multiplayer_ui();
@@ -458,6 +489,11 @@ static void handle_knob_event(knob_event_t k)
         if (k == KNOB_LEFT)      change_brightness(-1);
         else if (k == KNOB_RIGHT) change_brightness(+1);
         refresh_settings_ui();
+    }
+    else if (lv_scr_act() == screen_rotate)
+    {
+        if (k == KNOB_LEFT)      change_display_rotation(-1);
+        else if (k == KNOB_RIGHT) change_display_rotation(+1);
     }
     else if (lv_scr_act() == screen_multiplayer)
     {

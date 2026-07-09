@@ -274,6 +274,23 @@ for ms in 0 1; do
     shot "setting_multiselect_${ms_name[$ms]}.png" --screen setting:multi-select --multi-select "$ms"
 done
 
+# Rotate screen + rotated life screens (physical display rotation)
+shot "setting_rotate_screen.png" --screen rotate
+shot "1p_rot90.png"  --screen 1p --track 1 --display-rotation 1
+shot "4p_rot180.png" --screen 4p --track 4 --display-rotation 2
+
+# Menu facing: player menus rotate toward the acting player
+for mf in 0 1; do
+    mf_name=("fixed" "face")
+    shot "setting_menufacing_${mf_name[$mf]}.png" --screen setting:menu-facing --menu-facing "$mf"
+done
+shot "player_menu_facing_2p_tabletop_p1.png" --screen player-menu \
+    --track 2 --orientation 2 --menu-facing 1 --menu-player 1
+shot "player_menu_facing_4p_centric_p2.png" --screen player-menu \
+    --track 4 --orientation 1 --menu-facing 1 --menu-player 2
+shot "player_menu_facing_off_p1.png" --screen player-menu \
+    --track 2 --orientation 2 --menu-facing 0 --menu-player 1
+
 shot "setting_tablesync_off.png"    --screen table-sync --track 4
 shot "setting_tablesync_ingame.png" --screen table-sync --track 4 --table-sync 1 --table-session 14242
 shot "setting_tablesync_1p.png"     --screen table-sync

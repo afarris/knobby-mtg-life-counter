@@ -39,7 +39,14 @@ static void sim_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *
     int x, y;
     for (y = area->y1; y <= area->y2; y++) {
         for (x = area->x1; x <= area->x2; x++) {
-            framebuffer[y * SCREEN_W + x] = *color_p++;
+            /* Remap to mimic the panel's MADCTL rotation (see
+               display_apply_rotation in scr_st77916.h) */
+            switch (sim_display_rotation) {
+            case 1:  framebuffer[x * SCREEN_W + (SCREEN_W - 1 - y)] = *color_p++; break;
+            case 2:  framebuffer[(SCREEN_H - 1 - y) * SCREEN_W + (SCREEN_W - 1 - x)] = *color_p++; break;
+            case 3:  framebuffer[(SCREEN_H - 1 - x) * SCREEN_W + y] = *color_p++; break;
+            default: framebuffer[y * SCREEN_W + x] = *color_p++; break;
+            }
         }
     }
     lv_disp_flush_ready(drv);
@@ -117,6 +124,7 @@ static void nav_tools(void)      { lv_scr_load(screen_tools_menu); }
 static void nav_settings_menu(void) { lv_scr_load(settings_pages[0]); }
 static void nav_brightness(void) { open_settings_screen(); }
 static void nav_battery(void)    { open_battery_screen(); }
+static void nav_rotate(void)     { open_rotate_screen(); }
 static void nav_table_sync(void) { open_table_sync_screen(); }
 static void nav_dice(void)       { open_dice_screen(); }
 static void nav_damage_log(void) { open_damage_log_screen(); }
@@ -161,6 +169,7 @@ static const screen_entry_t all_screens[] = {
     {"settings-menu", nav_settings_menu},
     {"brightness",    nav_brightness},
     {"battery",       nav_battery},
+    {"rotate",        nav_rotate},
     {"table-sync",    nav_table_sync},
     {"dice",          nav_dice},
     {"damage-log",    nav_damage_log},
@@ -231,6 +240,8 @@ static void print_usage(void)
            "  --player-colors <csv>  Per-player custom color indices, e.g. 0,5,2,13\n"
            "  --player-override <csv> Per-player override flags, e.g. 0,1,0,0\n"
            "  --orientation <n>      0=absolute, 1=centric, 2=tabletop (default: 0)\n"
+           "  --display-rotation <n> Physical rotation: 0=0°, 1=90°, 2=180°, 3=270° (default: 0)\n"
+           "  --menu-facing <n>      0=menus fixed, 1=player menus face the acting player (default: 0)\n"
            "  --brightness <n>       Brightness percent 1-100 (default: 30)\n"
            "  --auto-dim <n>         0=OFF, 1=15s, 2=30s, 3=60s (default: 0)\n"
            "  --deselect <n>         0=never, 1=5s, 2=15s, 3=30s (default: 0)\n"
@@ -263,7 +274,7 @@ static void print_usage(void)
            "  main 1p 2p 3p 4p intro menu tools settings-menu\n"
            "  settings-page<N>       Settings page N (1-based)\n"
            "  setting:<id>           Page hosting a setting (e.g. setting:autodim)\n"
-           "  brightness battery dice damage-log game-mode custom-life select\n"
+           "  brightness battery rotate dice damage-log game-mode custom-life select\n"
            "  damage player-menu rename all-damage counters-menu counter-edit\n"
            "  color-menu color-picker mana\n"
            "\nIntrospection:\n"
@@ -405,6 +416,10 @@ int main(int argc, char *argv[])
             sim_nvs_preset_i8("color_mode", (int8_t)atoi(argv[++i]));
         } else if (strcmp(argv[i], "--orientation") == 0 && i + 1 < argc) {
             sim_nvs_preset_i8("rotation", (int8_t)atoi(argv[++i]));
+        } else if (strcmp(argv[i], "--display-rotation") == 0 && i + 1 < argc) {
+            sim_nvs_preset_i8("disp_rot", (int8_t)atoi(argv[++i]));
+        } else if (strcmp(argv[i], "--menu-facing") == 0 && i + 1 < argc) {
+            sim_nvs_preset_i8("menu_face", (int8_t)atoi(argv[++i]));
         } else if (strcmp(argv[i], "--brightness") == 0 && i + 1 < argc) {
             brightness_val = atoi(argv[++i]);
             brightness_set = 1;
@@ -551,6 +566,7 @@ int main(int argc, char *argv[])
         } \
         if (menu_player_set) { \
             menu_player = menu_player_val; \
+            menu_facing_refresh(); \
         } \
         if (player_colors_set) { \
             for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) \

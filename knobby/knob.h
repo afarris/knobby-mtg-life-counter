@@ -49,6 +49,7 @@ void knob_notify_swipe_left(void);
 void knob_notify_swipe_right(void);
 float knob_read_battery_voltage(void);
 void scr_display_on(void);
+void display_apply_rotation(int rot);
 
 
 #ifdef __cplusplus

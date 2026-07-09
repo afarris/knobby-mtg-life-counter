@@ -38,7 +38,15 @@ static void sim_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *
     int x, y;
     for (y = area->y1; y <= area->y2; y++) {
         for (x = area->x1; x <= area->x2; x++) {
-            framebuffer[y * SCREEN_W + x] = *color_p++;
+            /* Remap to mimic the panel's MADCTL rotation (see
+               display_apply_rotation in scr_st77916.h); sdl_mouse_read
+               applies the inverse so clicks track the rotated image. */
+            switch (sim_display_rotation) {
+            case 1:  framebuffer[x * SCREEN_W + (SCREEN_W - 1 - y)] = *color_p++; break;
+            case 2:  framebuffer[(SCREEN_H - 1 - y) * SCREEN_W + (SCREEN_W - 1 - x)] = *color_p++; break;
+            case 3:  framebuffer[(SCREEN_H - 1 - x) * SCREEN_W + y] = *color_p++; break;
+            default: framebuffer[y * SCREEN_W + x] = *color_p++; break;
+            }
         }
     }
     lv_disp_flush_ready(drv);
@@ -214,10 +222,21 @@ static void handle_sdl_events(void)
 void sdl_mouse_read(lv_indev_drv_t * drv, lv_indev_data_t * data)
 {
     int x, y;
+    int lx, ly;
     uint32_t buttons = SDL_GetMouseState(&x, &y);
-    
-    data->point.x = (lv_coord_t)x;
-    data->point.y = (lv_coord_t)y;
+
+    /* Window coords are "physical panel" coords; map back to LVGL's logical
+       space (inverse of the sim_flush_cb remap), like the touch controller
+       does on hardware. */
+    switch (sim_display_rotation) {
+    case 1:  lx = y;                ly = SCREEN_W - 1 - x; break;
+    case 2:  lx = SCREEN_W - 1 - x; ly = SCREEN_H - 1 - y; break;
+    case 3:  lx = SCREEN_H - 1 - y; ly = x;                break;
+    default: lx = x;                ly = y;                break;
+    }
+
+    data->point.x = (lv_coord_t)lx;
+    data->point.y = (lv_coord_t)ly;
     data->state = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
 }
 

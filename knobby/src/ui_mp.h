@@ -12,6 +12,8 @@ void rebuild_multiplayer_layout(int track);
 
 void refresh_multiplayer_ui(void);
 
+int mp_player_seat_rotation(int player);
+
 void select_kick_timer(void);
 
 #endif // _UI_MP_H

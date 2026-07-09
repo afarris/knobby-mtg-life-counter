@@ -33,6 +33,9 @@
 #define ORIENTATION_MODE_TABLETOP 2
 #define ORIENTATION_MODE_COUNT    3
 
+// ---------- display rotation (physical, degrees = value * 90) ----------
+#define DISPLAY_ROTATION_COUNT 4
+
 // ---------- auto-dim timeout options ----------
 #define AUTO_DIM_OFF  0
 #define AUTO_DIM_15S  1

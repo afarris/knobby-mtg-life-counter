@@ -298,6 +298,30 @@ void scr_display_on(void)
   if (lcd != NULL) lcd->displayOn();
 }
 
+/* Rotate the whole display in 90-degree steps via the panel's MADCTL flags.
+   The user rotation composes with the per-board base mirrors (XOR); the same
+   swap/mirror triple goes to the touch controller so touch and swipe
+   coordinates track the rotated image. */
+void display_apply_rotation(int rot)
+{
+  static const struct { bool swap; bool mx; bool my; } rot_flags[4] = {
+    {false, false, false},  /* 0   */
+    {true,  true,  false},  /* 90  */
+    {false, true,  true},   /* 180 */
+    {true,  false, true},   /* 270 */
+  };
+  if (lcd == NULL || touch == NULL) return;
+  rot &= 3;
+  bool mx = rot_flags[rot].mx ^ board->mirror_x;
+  bool my = rot_flags[rot].my ^ board->mirror_y;
+  lcd->swapXY(rot_flags[rot].swap);
+  lcd->mirrorX(mx);
+  lcd->mirrorY(my);
+  touch->swapXY(rot_flags[rot].swap);
+  touch->mirrorX(mx);
+  touch->mirrorY(my);
+}
+
 static bool tp_tracking = false;
 static lv_point_t tp_start = {0, 0};
 static lv_point_t tp_last = {0, 0};

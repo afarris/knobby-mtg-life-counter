@@ -19,6 +19,10 @@ void sim_nvs_preset_u32(const char *key, uint32_t value);
 /* Controllable battery voltage for screenshots */
 extern float sim_battery_voltage;
 
+/* Physical display rotation (0-3, degrees = value * 90); set via
+   display_apply_rotation(), consumed by the sim flush callbacks */
+extern int sim_display_rotation;
+
 /* ESP32 attribute macros — empty on desktop */
 #ifndef IRAM_ATTR
 #define IRAM_ATTR
