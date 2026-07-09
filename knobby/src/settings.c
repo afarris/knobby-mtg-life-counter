@@ -521,16 +521,18 @@ static void event_setting_more(lv_event_t *e)
         lv_scr_load(settings_pages[page]);
 }
 
-/* Chunk the flat item list into quad pages: 3 items + "More" per page,
-   except the last page which holds up to 4. */
+/* Chunk the flat item list into quad pages: 3 items + "More" per page.
+   "More" always advances and wraps from the last page to the first, so
+   tap navigation cycles just like the knob. */
 static void build_settings_pages(void)
 {
     int idx = 0;
     int page = 0;
+    int total_pages = (SETTINGS_ITEM_COUNT + 2) / 3;
 
     while (idx < SETTINGS_ITEM_COUNT) {
         int remaining = SETTINGS_ITEM_COUNT - idx;
-        int on_page = (remaining <= 4) ? remaining : 3;
+        int on_page = (remaining < 3) ? remaining : 3;
         int first = idx;
         int s;
         quad_item_t q[4];
@@ -546,13 +548,11 @@ static void build_settings_pages(void)
             q[s].user_data = (void *)it;
             setting_page_of[idx] = page;
         }
-        if (remaining > 4) {
-            q[3].label = "More";
-            q[3].cb = event_setting_more;
-            q[3].enabled = true;
-            q[3].event = LV_EVENT_CLICKED;
-            q[3].user_data = (void *)(intptr_t)(page + 1);
-        }
+        q[3].label = "More";
+        q[3].cb = event_setting_more;
+        q[3].enabled = true;
+        q[3].event = LV_EVENT_CLICKED;
+        q[3].user_data = (void *)(intptr_t)((page + 1) % total_pages);
         build_quad_screen(&settings_pages[page], q);
         for (s = 0; s < on_page; s++) {
             setting_btns[first + s] = lv_obj_get_child(settings_pages[page], s);
@@ -575,14 +575,27 @@ bool settings_handle_back(lv_obj_t *screen)
             return true;
         }
     }
+    /* Back from any settings page exits to the quad menu — back means
+       "leave settings", not "previous page" (the knob flips pages). */
     for (i = 0; i < settings_page_count; i++) {
         if (screen == settings_pages[i]) {
-            if (i == 0) {
-                settings_save();
-                lv_scr_load(screen_quad_menu);
-            } else {
-                lv_scr_load(settings_pages[i - 1]);
-            }
+            settings_save();
+            lv_scr_load(screen_quad_menu);
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Knob left/right flips between settings pages, with wraparound.
+   Returns false when the active screen is not a settings page. */
+bool settings_knob_page(int dir)
+{
+    int i;
+
+    for (i = 0; i < settings_page_count; i++) {
+        if (lv_scr_act() == settings_pages[i]) {
+            lv_scr_load(settings_pages[(i + dir + settings_page_count) % settings_page_count]);
             return true;
         }
     }

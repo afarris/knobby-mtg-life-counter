@@ -536,6 +536,11 @@ static void handle_knob_event(knob_event_t k)
         if (k == KNOB_LEFT)      change_mana_value(-1);
         else if (k == KNOB_RIGHT) change_mana_value(+1);
     }
+    else if (k == KNOB_LEFT || k == KNOB_RIGHT)
+    {
+        /* Settings pages: knob flips between pages (no-op elsewhere) */
+        settings_knob_page(k == KNOB_RIGHT ? +1 : -1);
+    }
 }
 
 /* Producer: runs in the encoder esp_timer task, possibly on the other
