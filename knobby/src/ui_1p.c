@@ -35,6 +35,7 @@ static lv_obj_t *label_enemy_damage[MAX_ENEMY_COUNT];
 static lv_obj_t *label_damage_title = NULL;
 static lv_obj_t *label_damage_value = NULL;
 static lv_obj_t *label_damage_hint = NULL;
+static lv_obj_t *label_damage_delta = NULL;
 
 // ---------- refresh functions ----------
 static void refresh_ring(void)
@@ -266,21 +267,39 @@ void refresh_damage_ui(void)
 {
     char buf[64];
     lv_color_t text_color;
+    lv_color_t bg_color;
+    int player_index;
+    int delta = damage_pending_delta();
 
     if (selected_enemy < 0 || selected_enemy >= active_enemy_count) return;
 
-    {
-        int player_index = get_cmd_target_player_index(selected_enemy);
-        text_color = get_player_text_color(player_index);
-        lv_label_set_text(label_damage_title, player_names[player_index]);
-        lv_obj_set_style_bg_color(screen_damage, get_player_active_color(player_index), 0);
-    }
+    player_index = get_cmd_target_player_index(selected_enemy);
+    bg_color = get_player_active_color(player_index);
+    text_color = get_player_text_color(player_index);
+    lv_label_set_text(label_damage_title, player_names[player_index]);
+    lv_obj_set_style_bg_color(screen_damage, bg_color, 0);
     lv_obj_set_style_text_color(label_damage_title, text_color, 0);
-    lv_obj_set_style_text_color(label_damage_value, text_color, 0);
     lv_obj_set_style_text_color(label_damage_hint, text_color, 0);
 
     snprintf(buf, sizeof(buf), "Damage: %d", enemies[selected_enemy].damage);
     lv_label_set_text(label_damage_value, buf);
+    lv_obj_set_style_text_color(label_damage_value, text_color, 0);
+
+    if (delta != 0) {
+        /* Undialed knob delta, annotated above the (already-updated) total.
+           Dialing damage up hurts the target, so the delta uses the
+           life-loss color (negated life delta), with the same contrast
+           fallback the multiplayer panels use. */
+        lv_color_t delta_color = get_player_preview_color(player_index, -delta);
+        if (color_is_light(bg_color) == color_is_light(delta_color))
+            delta_color = text_color;
+        snprintf(buf, sizeof(buf), "%+d", delta);
+        lv_label_set_text(label_damage_delta, buf);
+        lv_obj_set_style_text_color(label_damage_delta, delta_color, 0);
+        lv_obj_clear_flag(label_damage_delta, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(label_damage_delta, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 // ---------- navigation ----------
@@ -549,6 +568,14 @@ void build_damage_screen(void)
     lv_obj_set_style_text_color(label_damage_hint, lv_color_hex(0x6A6A6A), 0);
     lv_obj_set_style_text_font(label_damage_hint, &lv_font_montserrat_14, 0);
     lv_obj_align(label_damage_hint, LV_ALIGN_CENTER, 0, 24);
+
+    /* Pending knob delta, annotated above the running total */
+    label_damage_delta = lv_label_create(screen_damage);
+    lv_label_set_text(label_damage_delta, "");
+    lv_obj_set_style_text_color(label_damage_delta, lv_color_white(), 0);
+    lv_obj_set_style_text_font(label_damage_delta, &lv_font_montserrat_32, 0);
+    lv_obj_align(label_damage_delta, LV_ALIGN_CENTER, 0, -48);
+    lv_obj_add_flag(label_damage_delta, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *btn = make_button(screen_damage, "Apply", 120, 46, event_damage_apply);
     lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -46);

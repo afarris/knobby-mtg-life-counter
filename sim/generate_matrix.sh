@@ -165,12 +165,22 @@ for ct in 0 1 2 3; do
         --counter-type "$ct" --counter-value $((RANDOM % 50 + 1)) \
         --counter-player $((RANDOM % 4))
 done
+# Pending knob delta previews (delta big, resulting count beneath)
+shot "counter_edit_preview_pos.png" --screen counter-edit \
+    --counter-type 2 --counter-value 6 --counter-delta 3 --counter-player 1
+shot "counter_edit_preview_neg.png" --screen counter-edit \
+    --counter-type 0 --counter-value 4 --counter-delta -2 --counter-player 2
 
 # ============================================================
 # 9. Damage screen with non-zero damage
 # ============================================================
 shot "damage_nonzero.png" --screen damage --names Maya,Leah,Kyle \
     --enemy-damage 7,3,12
+# Pending knob delta previews (delta big, resulting total beneath)
+shot "damage_preview_pos.png" --screen damage --names Maya,Leah,Kyle \
+    --enemy-damage 7,3,12 --damage-delta 3
+shot "damage_preview_neg.png" --screen damage --names Maya,Leah,Kyle \
+    --enemy-damage 7,3,12 --damage-delta -2
 
 # ============================================================
 # 10. Select screen with accumulated commander damage
