@@ -440,6 +440,15 @@ void change_counter_edit(int delta)
     counter_edit_value = clamp_counter(counter_edit_value + delta);
 }
 
+/* Knob turns since the editor opened, i.e. the delta apply_counter_edit()
+   will commit against the player's live counter. */
+int counter_edit_pending_delta(void)
+{
+    if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS) return 0;
+    if (counter_edit_type < 0 || counter_edit_type >= COUNTER_TYPE_COUNT) return 0;
+    return counter_edit_value - player_counters[menu_player][counter_edit_type];
+}
+
 int apply_counter_edit(void)
 {
     int player = menu_player;
@@ -579,6 +588,15 @@ void add_damage_to_selected_enemy(int delta)
         enemies[selected_enemy].damage = 0;
 
     refresh_damage_ui();
+}
+
+/* Knob turns since the editor opened, i.e. the delta damage_apply()
+   will commit. The staged value lives in enemies[].damage; this is the
+   difference against the snapshot damage_enter() took. */
+int damage_pending_delta(void)
+{
+    if (selected_enemy < 0 || selected_enemy >= active_enemy_count) return 0;
+    return enemies[selected_enemy].damage - damage_start_value;
 }
 
 void damage_apply(void)

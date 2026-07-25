@@ -254,9 +254,11 @@ static void print_usage(void)
            "  --dice <n>             Set dice roll result (1-20)\n"
            "  --counter-type <n>     Counter type for counter-edit: 0=cmd tax, 1=partner tax,\n"
            "                         2=poison, 3=experience (default: 2)\n"
-           "  --counter-value <n>    Counter value for counter-edit (default: 0)\n"
+           "  --counter-value <n>    Committed counter value for counter-edit (default: 0)\n"
+           "  --counter-delta <n>    Pending knob delta on counter-edit (default: 0)\n"
            "  --counter-player <n>   Player for counter-edit, 0-3 (default: 0)\n"
            "  --enemy-damage <csv>   Set commander damage per enemy row (e.g. 5,12,3)\n"
+           "  --damage-delta <n>     Pending knob delta on the damage screen (default: 0)\n"
            "  --all-damage-value <n> Value for all-damage screen (default: 5)\n"
            "  --menu-player <n>      Player index for player-menu, 0-3 (default: 0)\n"
            "  --battery-voltage <f>  Battery voltage for battery screen (default: 4.0)\n"
@@ -346,8 +348,12 @@ int main(int argc, char *argv[])
     int counter_value_val = 0;
     int counter_value_set = 0;
     int counter_player_val = 0;
+    int counter_delta_val = 0;
+    int counter_delta_set = 0;
     int enemy_damage_values[MAX_ENEMY_COUNT] = {0};
     int enemy_damage_set = 0;
+    int damage_delta_val = 0;
+    int damage_delta_set = 0;
     int all_damage_val = 5;
     int all_damage_set = 0;
     int menu_player_val = 0;
@@ -440,9 +446,15 @@ int main(int argc, char *argv[])
             counter_value_set = 1;
         } else if (strcmp(argv[i], "--counter-player") == 0 && i + 1 < argc) {
             counter_player_val = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--counter-delta") == 0 && i + 1 < argc) {
+            counter_delta_val = atoi(argv[++i]);
+            counter_delta_set = 1;
         } else if (strcmp(argv[i], "--enemy-damage") == 0 && i + 1 < argc) {
             parse_csv_ints(argv[++i], enemy_damage_values, MAX_ENEMY_COUNT);
             enemy_damage_set = 1;
+        } else if (strcmp(argv[i], "--damage-delta") == 0 && i + 1 < argc) {
+            damage_delta_val = atoi(argv[++i]);
+            damage_delta_set = 1;
         } else if (strcmp(argv[i], "--all-damage-value") == 0 && i + 1 < argc) {
             all_damage_val = atoi(argv[++i]);
             all_damage_set = 1;
@@ -549,17 +561,24 @@ int main(int argc, char *argv[])
             dice_result = dice_val; \
             refresh_dice_ui(); \
         } \
-        if (counter_type_set || counter_value_set) { \
+        if (counter_type_set || counter_value_set || counter_delta_set) { \
+            if (counter_value_set && \
+                counter_player_val >= 0 && counter_player_val < MAX_DISPLAY_PLAYERS && \
+                counter_type_val >= 0 && counter_type_val < COUNTER_TYPE_COUNT) \
+                player_counters[counter_player_val][counter_type_val] = counter_value_val; \
             begin_counter_edit(counter_player_val, (counter_type_t)counter_type_val); \
-            if (counter_value_set) counter_edit_value = counter_value_val; \
+            if (counter_delta_set) change_counter_edit(counter_delta_val); \
             refresh_counter_edit_ui(); \
         } \
         if (enemy_damage_set) { \
             for (i = 0; i < MAX_ENEMY_COUNT; i++) \
                 enemies[i].damage = enemy_damage_values[i]; \
+            damage_enter(); /* values are committed state, not a pending dial */ \
             refresh_select_ui(); \
             refresh_damage_ui(); \
         } \
+        if (damage_delta_set) \
+            add_damage_to_selected_enemy(damage_delta_val); \
         if (all_damage_set) { \
             all_damage_value = all_damage_val; \
             refresh_all_damage_ui(); \

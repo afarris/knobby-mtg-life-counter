@@ -24,6 +24,7 @@ static lv_obj_t *label_counter_edit_title = NULL;
 static lv_obj_t *label_counter_edit_value = NULL;
 static lv_obj_t *label_counter_edit_hint = NULL;
 static lv_obj_t *label_counter_edit_icon = NULL;
+static lv_obj_t *label_counter_edit_delta = NULL;
 
 // ---------- forward declarations ----------
 static void open_all_damage_screen(void);
@@ -74,6 +75,24 @@ void refresh_counter_edit_ui(void) {
   if (label_counter_edit_value != NULL) {
     snprintf(value_buf, sizeof(value_buf), "%d", counter_edit_value);
     lv_label_set_text(label_counter_edit_value, value_buf);
+  }
+
+  if (label_counter_edit_delta != NULL) {
+    int delta = counter_edit_pending_delta();
+
+    if (delta != 0) {
+      /* Undialed knob delta, annotated above the (already-updated) count:
+         life-screen colors, green up, red down. */
+      snprintf(value_buf, sizeof(value_buf), "%+d", delta);
+      lv_label_set_text(label_counter_edit_delta, value_buf);
+      lv_obj_set_style_text_color(label_counter_edit_delta,
+                                  (delta > 0) ? lv_color_hex(0x06D6A0)
+                                              : lv_color_hex(0xFF1744),
+                                  0);
+      lv_obj_clear_flag(label_counter_edit_delta, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(label_counter_edit_delta, LV_OBJ_FLAG_HIDDEN);
+    }
   }
 }
 
@@ -441,6 +460,15 @@ void build_counter_edit_screen(void) {
   lv_obj_set_style_text_font(label_counter_edit_hint, &lv_font_montserrat_14,
                              0);
   lv_obj_align(label_counter_edit_hint, LV_ALIGN_CENTER, 0, 34);
+
+  /* Pending knob delta, annotated above the running count */
+  label_counter_edit_delta = lv_label_create(screen_counter_edit);
+  lv_label_set_text(label_counter_edit_delta, "");
+  lv_obj_set_style_text_color(label_counter_edit_delta, lv_color_white(), 0);
+  lv_obj_set_style_text_font(label_counter_edit_delta, &lv_font_montserrat_32,
+                             0);
+  lv_obj_align(label_counter_edit_delta, LV_ALIGN_CENTER, 0, -44);
+  lv_obj_add_flag(label_counter_edit_delta, LV_OBJ_FLAG_HIDDEN);
 
   btn = make_button(screen_counter_edit, "Apply", 120, 46, event_counter_apply);
   lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -46);
