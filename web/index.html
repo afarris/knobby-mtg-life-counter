@@ -12,27 +12,47 @@
       background-color: #121212;
       color: #e0e0e0;
     }
-    h1 { color: #ffffff; }
+    h1, h2 { color: #ffffff; }
     .container {
       max-width: 600px;
-      margin: 0 auto;
+      margin: 0 auto 30px;
       background: #1e1e1e;
       padding: 30px;
       border-radius: 8px;
       box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
     p { line-height: 1.6; }
+    ol { text-align: left; line-height: 1.6; }
+    a { color: #8ab4f8; }
     esp-web-install-button { margin-top: 20px; }
   </style>
 </head>
 <body>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.0.1/dist/web/install-button.js?module"></script>
+
   <div class="container">
     <h1>Knobby Web Installer</h1>
     <p>Connect your Knobby device via USB, then click the button below to flash the latest firmware directly from your browser.</p>
     <p><em>Note: This requires a Web Serial compatible browser like Chrome, Edge, or Opera.</em></p>
     <p><em>Note: If you get an "Installation failed - Your ESP32 board is not supported" error, try flipping your USB cable 180 degrees, refreshing the page, and trying again. The cable orientation affects which chip is exposed for flashing on this device.</em></p>
-    <script type="module" src="https://unpkg.com/esp-web-tools@10.0.1/dist/web/install-button.js?module"></script>
     <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
+  </div>
+
+  <div class="container">
+    <h2>Optional: put the audio chip to sleep</h2>
+    <p>The JC3636K518 board has a second chip for Bluetooth audio. Knobby never uses it, but it stays switched on and drains the battery. This button replaces its software with one that keeps it asleep.</p>
+    <ol>
+      <li>Install Knobby with the button above first.</li>
+      <li>Unplug the USB-C cable from the device, turn the plug over, and plug it back in.</li>
+      <li>Refresh this page, then click the button below.</li>
+      <li>Pick the port named "USB Serial" (on Windows, "USB-SERIAL CH340"). If you only see "USB JTAG/serial debug unit", the plug is still the Knobby way up: turn it over again.</li>
+    </ol>
+    <p><em>Note: This removes the chip's original Bluetooth audio software, and this page cannot put it back. Knobby does not need it.</em></p>
+    <p><em>Note: If no "USB Serial" port appears on Windows, install the <a href="https://www.wch-ic.com/downloads/CH341SER_EXE.html">CH340 driver</a>, then unplug and replug the cable.</em></p>
+    <p><em>Note: You only need to do this once. Later Knobby updates do not undo it.</em></p>
+    <esp-web-install-button manifest="manifest-coproc.json">
+      <button slot="activate">Put the audio chip to sleep</button>
+    </esp-web-install-button>
   </div>
 </body>
 </html>

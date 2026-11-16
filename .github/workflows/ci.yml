@@ -38,3 +38,7 @@ jobs:
       - name: Compile with arduino-cli
         run: |
           arduino-cli compile --fqbn "esp32:esp32:esp32s3:FlashSize=16M,PSRAM=opi,USBMode=hwcdc,CDCOnBoot=cdc,FlashMode=qio,PartitionScheme=custom" knobby
+
+      - name: Compile the co-processor sleep sketch
+        run: |
+          arduino-cli compile --fqbn "esp32:esp32:esp32" tools/coproc_sleep

@@ -51,12 +51,20 @@ jobs:
         run: |
           arduino-cli compile --fqbn "esp32:esp32:esp32s3:FlashSize=16M,PSRAM=opi,USBMode=hwcdc,CDCOnBoot=cdc,FlashMode=qio,PartitionScheme=custom" --export-binaries knobby
 
+      - name: Compile the co-processor sleep sketch
+        run: |
+          arduino-cli compile --fqbn "esp32:esp32:esp32" --export-binaries tools/coproc_sleep
+
       - name: Prepare Web Site
         run: |
           # Copy exported binaries into the static web directory
           cp knobby/build/esp32.esp32.esp32s3/*.bin web/
-          # Update version in manifest.json to match the tag
-          sed -i "s/\"latest\"/\"${{ github.ref_name }}\"/g" web/manifest.json
+          # The co-processor manifest reuses boot_app0.bin from the line above
+          for part in bootloader.bin partitions.bin bin; do
+            cp "tools/coproc_sleep/build/esp32.esp32.esp32/coproc_sleep.ino.$part" web/
+          done
+          # Update version in the manifests to match the tag
+          sed -i "s/\"latest\"/\"${{ github.ref_name }}\"/g" web/manifest.json web/manifest-coproc.json
 
       - name: Setup Pages
         uses: actions/configure-pages@v6

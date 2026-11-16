@@ -1,0 +1,16 @@
+{
+  "name": "Knobby audio chip sleep",
+  "version": "latest",
+  "new_install_prompt_erase": false,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        { "path": "coproc_sleep.ino.bootloader.bin", "offset": 4096 },
+        { "path": "coproc_sleep.ino.partitions.bin", "offset": 32768 },
+        { "path": "boot_app0.bin", "offset": 57344 },
+        { "path": "coproc_sleep.ino.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}
